@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Attendance System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section h2 {
+            margin-bottom: 10px;
+        }
+        .section input[type="number"], .section input[type="file"] {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        .section button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .section button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Employee Attendance System</h1>
+
+    <!-- Check Attendance Status -->
+    <div class="container section">
+        <h2>Check Attendance Status</h2>
+        <input type="number" id="employeeId" placeholder="Employee ID">
+        <button onclick="checkAttendanceStatus()">Check Status</button>
+        <p id="result"></p>
+    </div>
+
+    <!-- Start Day -->
+    <div class="container section hidden" id="startDaySection">
+        <h2>Start Day</h2>
+        <input type="number" id="startEmployeeId" placeholder="Employee ID">
+        <button onclick="startDay()">Start Day</button>
+    </div>
+
+    <!-- Mark Time-In -->
+    <div class="container section hidden" id="timeInSection">
+        <h2>Mark Time-In</h2>
+        <input type="number" id="timeInRecordId" placeholder="Record ID">
+        <input type="file" id="timeInImage">
+        <button onclick="markTimeIn()">Mark Time-In</button>
+    </div>
+
+    <!-- Mark Time-Out -->
+    <div class="container section hidden" id="timeOutSection">
+        <h2>Mark Time-Out</h2>
+        <input type="number" id="timeOutRecordId" placeholder="Record ID">
+        <input type="file" id="timeOutImage">
+        <button onclick="markTimeOut()">Mark Time-Out</button>
+    </div>
+
+    <!-- Mark Absent -->
+    <div class="container section hidden" id="markAbsentSection">
+        <h2>Mark Absent</h2>
+        <input type="number" id="absentEmployeeId" placeholder="Employee ID">
+        <button onclick="markAbsent()">Mark Absent</button>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:8080";
+
+        // Function to start the day
+        function startDay() {
+            const employeeId = document.getElementById('startEmployeeId').value;
+            const formData = new FormData();
+            formData.append('employeeId', employeeId);
+
+            fetch(`${API_URL}/api/attendance/start-day`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(alert)
+            .catch(error => alert('Error: ' + error));
+        }
+
+        // Function to mark time-in
+        function markTimeIn() {
+            const recordId = document.getElementById('timeInRecordId').value;
+            const image = document.getElementById('timeInImage').files[0];
+            const formData = new FormData();
+            formData.append('recordId', recordId);
+            formData.append('imageIn', image);
+
+            fetch(`${API_URL}/api/attendance/mark-time-in`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(alert)
+            .catch(error => alert('Error: ' + error));
+        }
+
+        // Function to mark time-out
+        function markTimeOut() {
+            const recordId = document.getElementById('timeOutRecordId').value;
+            const image = document.getElementById('timeOutImage').files[0];
+            const formData = new FormData();
+            formData.append('recordId', recordId);
+            formData.append('imageOut', image);
+
+            fetch(`${API_URL}/api/attendance/mark-time-out`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(alert)
+            .catch(error => alert('Error: ' + error));
+        }
+
+        // Function to mark absent
+        function markAbsent() {
+            const employeeId = document.getElementById('absentEmployeeId').value;
+            const formData = new FormData();
+            formData.append('employeeId', employeeId);
+
+            fetch(`${API_URL}/api/attendance/mark-absent`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(alert)
+            .catch(error => alert('Error: ' + error));
+        }
+
+        // Function to check attendance status
+        async function checkAttendanceStatus() {
+            const employeeId = document.getElementById("employeeId").value;
+
+            if (!employeeId) {
+                alert("Please enter the Employee ID.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/attendance/check-attendance-status?employeeId=${employeeId}`);
+
+                if (response.ok) {
+                    const result = await response.text();
+                    document.getElementById("result").innerText = result;
+
+                    // Show/hide relevant sections based on attendance status
+                    if (result.includes("Present")) {
+                        document.getElementById("timeInSection").classList.add("hidden");
+                        document.getElementById("timeOutSection").classList.remove("hidden");
+                        document.getElementById("markAbsentSection").classList.add("hidden");
+                    } else {
+                        document.getElementById("timeInSection").classList.remove("hidden");
+                        document.getElementById("timeOutSection").classList.add("hidden");
+                        document.getElementById("markAbsentSection").classList.remove("hidden");
+                    }
+                } else if (response.status === 404) {
+                    document.getElementById("result").innerText = "No attendance record found for today.";
+                    document.getElementById("timeInSection").classList.remove("hidden");
+                    document.getElementById("timeOutSection").classList.add("hidden");
+                    document.getElementById("markAbsentSection").classList.remove("hidden");
+                } else {
+                    document.getElementById("result").innerText = "An error occurred. Please try again later.";
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById("result").innerText = "An error occurred. Please try again later.";
+            }
+        }
+
+        // Automatically check the attendance status when the page loads or employeeId is entered (similar to React useEffect)
+        document.addEventListener('DOMContentLoaded', () => {
+            const employeeId = document.getElementById("employeeId").value;
+            if (employeeId) {
+                checkAttendanceStatus();
+            }
+        });
+    </script>
+
+</body>
+</html>

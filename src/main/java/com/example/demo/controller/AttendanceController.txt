@@ -1,0 +1,37 @@
+Here's a concise 2-line description for each of your endpoints:
+
+1. **/start-day**  
+   Starts a new attendance day for an employee if not already started. Returns success or already marked status.
+
+2. **/mark-time-in**  
+   Records employee time-in with optional image. Updates existing attendance record with timestamp and image.
+
+3. **/mark-time-out**  
+   Records employee time-out with optional image. Updates existing attendance record with timestamp and image.
+
+4. **/update-day-status**  
+   Updates the day status (e.g., "Completed") for a specific attendance record. Requires record ID.
+
+5. **/check-record**  
+   Verifies and retrieves full attendance record details by employee and record IDs.
+
+6. **/api/attendance/{recordId}/time-in**  
+   Retrieves the time-in image for a specific attendance record by record ID.
+
+7. **/TimeInDetails/{id}**  
+   Gets filtered attendance record containing only time-in details (ID, employee ID, time-in, and image).
+
+8. **/TimeOutDetails/{id}**  
+   Gets filtered attendance record containing only time-out details (ID, employee ID, time-out, and image).
+
+9. **/get-today-attendance**  
+   Retrieves all attendance records for the current day for a specific employee.
+
+10. **/get-yesterday-attendance**  
+    Retrieves all attendance records from yesterday for a specific employee.
+
+11. **/check-attendance-present-status**  
+    Checks completeness of today's attendance details for a present employee (time-in/out, images, status).
+
+12. **/mark-absent**  
+    Marks an employee as absent for the current day if no attendance record exists yet.

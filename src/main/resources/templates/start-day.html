@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <input type="number" id="employeeId" placeholder="Employee ID" />
+    <button onclick="startDay()">Start Day</button>
+    
+    <script>
+      function startDay() {
+        const employeeId = document.getElementById("employeeId").value;
+    
+        fetch("http://localhost:8080/api/attendance/start-day?employeeId=" + employeeId, {
+          method: "POST"
+        })
+        .then(res => res.json())
+        .then(recordId => {
+          localStorage.setItem("attendanceRecordId", recordId);
+          alert("Day started! Now mark time-in.");
+          window.location.href = "time-in.html";
+        });
+      }
+    </script>
+     
+</body>
+</html>

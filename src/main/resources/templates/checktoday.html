@@ -1,0 +1,52 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check Attendance Status</title>
+    <script>
+        // Function to check attendance status by employeeId
+        async function checkAttendanceStatus() {
+            const employeeId = document.getElementById("employeeId").value;
+            
+            // Make sure employeeId is entered
+            if (!employeeId) {
+                alert("Please enter the Employee ID.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://localhost:8080/api/attendance/check-attendance-status?employeeId=${employeeId}`);
+                
+                // Handle the response
+                if (response.ok) {
+                    const result = await response.text();
+                    document.getElementById("result").innerText = result;
+                } else if (response.status === 404) {
+                    document.getElementById("result").innerText = "No attendance record found for today.";
+                } else if (response.status === 400) {
+                    document.getElementById("result").innerText = "Attendance status is not 'Present'.";
+                } else if (response.status === 206) {
+                    const result = await response.text();
+                    document.getElementById("result").innerText = result;
+                } else {
+                    document.getElementById("result").innerText = "An error occurred. Please try again later.";
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById("result").innerText = "An error occurred. Please try again later.";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Check Attendance Status</h1>
+    
+    <label for="employeeId">Employee ID:</label>
+    <input type="number" id="employeeId" name="employeeId" required>
+    <button onclick="checkAttendanceStatus()">Check Attendance</button>
+
+    <p id="result"></p>
+</body>
+</html>
