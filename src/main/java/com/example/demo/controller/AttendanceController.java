@@ -1,11 +1,14 @@
 package com.example.demo.controller;
 
 import com.example.demo.MODELS.AttendanceRecord;
+import com.example.demo.MODELS.AttendanceRecordDTO;
+import com.example.demo.MODELS.DateUtil;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,11 +24,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/attendance")
@@ -40,68 +46,169 @@ private EmployeeService employeeService;
 @Autowired
 private LeavePermissionRepository leavePermissionRepository;
 
+   @Autowired
+    private AttendanceService attendanceService;
+
 
 
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+@PutMapping("/start-day")
+public ResponseEntity<?> startDay(@RequestParam Long employeeId, @RequestParam String location) {
+    String todayDate = LocalDate.now().format(dateFormatter);
+    String yesterdayDate = LocalDate.now().minusDays(1).format(dateFormatter);
 
-    @CrossOrigin(origins = "http://127.0.0.1:5500")
-    @PostMapping("/start-day")
-    public ResponseEntity<String> startDay(@RequestParam Long employeeId) {
-        // Format today's date as dd/MM/yyyy
-        String todayDate = LocalDate.now().format(dateFormatter);
-    
-        // Check if an attendance record already exists for this employee on today's date
-        List<AttendanceRecord> existingRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, todayDate);
-    
-        if (!existingRecords.isEmpty()) {
-            String status = existingRecords.get(0).getAttendanceStatus();
-            return ResponseEntity.badRequest()
-                    .body("Attendance already marked as '" + status + "' for today.");
-        }
-    
-        // Fetch the employee from the database
-        Optional<Employee> employeeOptional = employeeRepository.findById(employeeId);
-        if (employeeOptional.isEmpty()) {
-            return ResponseEntity.badRequest().body("Employee not found.");
-        }
-    
-        // Create a new attendance record for present status
-        AttendanceRecord record = new AttendanceRecord();
-        record.setEmployee(employeeOptional.get());
-        record.setAttendanceStatus("Present");
-        record.setDate(todayDate);
-    
-        // Save the attendance record
-        attendanceRecordRepository.save(record);
-    
-        return ResponseEntity.ok("Day started. Please mark time-in.");
+    // 1. Check if employee exists
+    Optional<Employee> employeeOptional = employeeRepository.findById(employeeId);
+    if (employeeOptional.isEmpty()) {
+        return ResponseEntity.badRequest().body("Employee not found.");
     }
-    
-    // Endpoint to mark time-in with image
-    @PostMapping("/mark-time-in")     // worked
-    public ResponseEntity<String> markTimeIn(
-            @RequestParam Long recordId,
-            @RequestParam MultipartFile imageIn) {
-        Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
-        if (optionalRecord.isPresent()) {
-            AttendanceRecord record = optionalRecord.get();
-            try {
-                record.setTimeIn(LocalDateTime.now());
-                if (imageIn != null && !imageIn.isEmpty()) {
-                    record.setImageIn(imageIn.getBytes());
-                }
-                attendanceRecordRepository.save(record);
-                return ResponseEntity.ok("Time-in recorded successfully.");
-            } catch (IOException e) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to process image.");
+    Employee employee = employeeOptional.get();
+
+    // 2. Check yesterday's attendance for missing time-out
+    List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, yesterdayDate);
+    if (!yesterdayRecords.isEmpty()) {
+        AttendanceRecord yesterdayRecord = yesterdayRecords.get(0);
+        if (yesterdayRecord.getAttendanceStatus().equalsIgnoreCase("Present") &&
+            yesterdayRecord.getTimeOut() == null) {
+            // If TimoutReason is not set, block and return the record ID
+            if (yesterdayRecord.getTimoutReason() == null || yesterdayRecord.getTimoutReason().isEmpty()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("error", "You didn’t mark time-out yesterday. Please submit a timeout reason.");
+                response.put("missedTimeoutRecordId", yesterdayRecord.getId());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
             }
-        } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found.");
         }
     }
 
+    // 3. Check if attendance already marked today
+    List<AttendanceRecord> todayRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, todayDate);
+    if (!todayRecords.isEmpty()) {
+        String status = todayRecords.get(0).getAttendanceStatus();
+        return ResponseEntity.badRequest()
+                .body("Attendance already marked as '" + status + "' for today.");
+    }
+
+    // 4. If all checks passed, create attendance record
+    AttendanceRecord record = new AttendanceRecord();
+    record.setEmployee(employee);
+    record.setAttendanceStatus("Present");
+    record.setDate(todayDate);
+    record.setLocation(location); // Store location
+
+    attendanceRecordRepository.save(record);
+
+    return ResponseEntity.ok("Day started. Please mark time-in.");
+}
+    
+@PostMapping("/submit-timeout-reason")
+public ResponseEntity<?> submitTimeoutReason(@RequestParam Long recordId, @RequestParam String reason) {
+    Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
+    if (optionalRecord.isPresent()) {
+        AttendanceRecord record = optionalRecord.get();
+        record.setTimoutReason(reason);
+        attendanceRecordRepository.save(record);
+        return ResponseEntity.ok("Timeout reason submitted successfully.");
+    } else {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found.");
+    }
+}
+@GetMapping("/missed-timeout")
+public List<Map<String, Object>> getMissedTimeoutEmployees() {
+    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present");
+    List<Map<String, Object>> result = new ArrayList<>();
+    for (AttendanceRecord record : records) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("attendanceId", record.getId());
+        map.put("firstName", record.getEmployee().getFirstName());
+        map.put("mobile", record.getEmployee().getMobile());
+        map.put("branch", record.getEmployee().getBranch());
+        map.put("position", record.getEmployee().getPosition());
+        map.put("date", record.getDate());
+        map.put("timeoutReason", record.getTimoutReason()); // Add this line
+        result.add(map);
+    }
+    return result;
+}
+@PutMapping("/complete-missed-timeout")
+public ResponseEntity<?> completeMissedTimeout(
+        @RequestParam Long attendanceId,
+        @RequestParam String timeOut // Format: "yyyy-MM-dd'T'HH:mm:ss"
+) {
+    Optional<AttendanceRecord> optional = attendanceRecordRepository.findById(attendanceId);
+    if (optional.isEmpty()) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found.");
+    }
+    AttendanceRecord record = optional.get();
+    record.setDayStatus("Completed");
+    record.setTimeOut(LocalDateTime.parse(timeOut));
+    // Automatically calculate and update missed times
+    employeeService.updateMissedTimes(record);
+    attendanceRecordRepository.save(record);
+    return ResponseEntity.ok("Timeout, missed times, and day status updated.");
+}
+   @CrossOrigin(origins = "*")
+@PostMapping("/mark-time-in")
+public ResponseEntity<String> markTimeIn(
+        @RequestParam Long recordId,
+        @RequestParam MultipartFile imageIn) {
+    Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
+    if (optionalRecord.isPresent()) {
+        try {
+            AttendanceRecord record = optionalRecord.get();
+            record.setTimeIn(LocalDateTime.now());
+            record.setImageIn(imageIn.getBytes());
+            attendanceRecordRepository.save(record);
+            return ResponseEntity.ok("Time-in recorded successfully.");
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Image processing failed");
+        }
+    } else {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found");
+    }
+}
+
+    @GetMapping("/all")
+    public List<AttendanceRecord> getAllAttendanceRecords() {
+        return attendanceRecordRepository.findAll();
+    }
+
+
+ @GetMapping("/monthly/{employeeId}")
+    public List<AttendanceRecord> getMonthlyAttendance(@PathVariable Long employeeId) {
+        return attendanceRecordRepository.findByEmployeeId(employeeId);
+    }
+
+    // Get one record by date
+   @GetMapping("/{employeeId}/{isoDate}")
+    public ResponseEntity<?> getByDate(
+            @PathVariable Long employeeId,
+            @PathVariable String isoDate) {
+
+        String dbDate = DateUtil.isoToDb(isoDate);          // 14/07/2025
+        return attendanceRecordRepository.findByEmployee_IdAndDate(employeeId, dbDate)
+                .map(AttendanceRecordDTO::fromEntity)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /* ---------- 2. Monthly list endpoint --------------------------------- */
+    // GET /api/attendance/monthly/9/2025/07
+    @GetMapping("/monthly/{employeeId}/{year}/{month}")
+    public List<AttendanceRecordDTO> getMonth(
+            @PathVariable Long employeeId,
+            @PathVariable int year,
+            @PathVariable int month) {
+
+        String start = DateUtil.dbStartOfMonth(year, month); // 01/07/2025
+        String end   = DateUtil.dbEndOfMonth(year, month);   // 31/07/2025
+
+        return attendanceRecordRepository.findMonthlySlice(employeeId, start, end)
+                   .stream()
+                   .map(AttendanceRecordDTO::fromEntity)
+                   .toList();
+    }
     // Endpoint to mark time-out with image
     @PostMapping("/mark-time-out")  // worked
     public ResponseEntity<String> markTimeOut(
@@ -221,6 +328,14 @@ private LeavePermissionRepository leavePermissionRepository;
                     .body("Image not found.".getBytes());
         }
     }
+@GetMapping("/incomplete/yesterday/count")
+public ResponseEntity<Long> countIncompleteDayStatusYesterday() {
+    LocalDate yesterday = LocalDate.now().minusDays(1);
+    String formattedDate = yesterday.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+
+    Long count = attendanceRecordRepository.countByDateAndDayStatusNot(formattedDate, "Complete");
+    return ResponseEntity.ok(count);
+}
 
     // Endpoint to fetch timeIn, imageIn, id, and employeeId by recordId
     @GetMapping("/TimeInDetails/{id}")
@@ -330,7 +445,52 @@ private LeavePermissionRepository leavePermissionRepository;
          return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance record found for today.");
      }
  }
- 
+@PostMapping("/auto-mark-absent")
+public ResponseEntity<?> autoMarkAbsentForMissedAttendance() {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    String todayDate = LocalDate.now().format(formatter);
+
+    List<Employee> allEmployees = employeeRepository.findAll();
+    int absentCount = 0;
+
+    for (Employee employee : allEmployees) {
+        List<AttendanceRecord> attendanceRecords =
+            attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), todayDate);
+
+        boolean isAlreadyMarkedToday = !attendanceRecords.isEmpty() && (
+            "Present".equalsIgnoreCase(attendanceRecords.get(0).getAttendanceStatus()) ||
+            "Absent".equalsIgnoreCase(attendanceRecords.get(0).getAttendanceStatus())
+        );
+
+        if (isAlreadyMarkedToday) continue; // Skip if already Present or Absent
+
+        List<LeavePermission> leaves = leavePermissionRepository.findByEmployeeId(employee.getId());
+        boolean hasLeaveToday = leaves.stream().anyMatch(leave -> {
+            try {
+                LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
+                LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
+                LocalDate today = LocalDate.now();
+                return !today.isBefore(start) && !today.isAfter(end);
+            } catch (Exception e) {
+                return false;
+            }
+        });
+
+        if (!hasLeaveToday) {
+            AttendanceRecord absentRecord = new AttendanceRecord();
+            absentRecord.setEmployee(employee);
+            absentRecord.setAttendanceStatus("Absent");
+            absentRecord.setDate(todayDate);
+            attendanceRecordRepository.save(absentRecord);
+            absentCount++;
+        }
+    }
+
+    return ResponseEntity.ok(absentCount + " employees marked as absent for today.");
+}
+
+
+
 
  @PostMapping("/mark-absent")
  public ResponseEntity<String> markAbsent(@RequestParam Long employeeId) {
@@ -448,7 +608,292 @@ public ResponseEntity<Map<String, Object>> getAttendanceByDateAndEmployeeId(
 
 
 
+    @GetMapping("/latest/{employeeId}")
+    public ResponseEntity<?> getLatestAttendance(@PathVariable Long employeeId) {
+        return attendanceService.getLatestAttendanceRecord(employeeId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+@GetMapping("/latest-today-or-yesterday/{employeeId}")
+public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employeeId) {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    String today = LocalDate.now().format(formatter);
+    String yesterday = LocalDate.now().minusDays(1).format(formatter);
+
+    // Try to get today's record
+    List<AttendanceRecord> todayRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, today);
+    if (!todayRecords.isEmpty()) {
+        return ResponseEntity.ok(todayRecords.get(0));
+    }
+
+    // If not found, try to get yesterday's record
+    List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, yesterday);
+    if (!yesterdayRecords.isEmpty()) {
+        return ResponseEntity.ok(yesterdayRecords.get(0));
+    }
+
+    // If neither found, return 404
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance record found for today or yesterday.");
+}
+
+    @GetMapping("/employee/{employeeId}")
+    public List<AttendanceRecord> getAttendanceByMonthAndYear(
+            @PathVariable Long employeeId,
+            @RequestParam int month,
+            @RequestParam int year) {
+
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
+        
+        // Filter based on month and year from string `date`
+        return records.stream()
+                .filter(r -> {
+                    try {
+                        LocalDate recordDate = LocalDate.parse(r.getDate(), DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                        return recordDate.getMonthValue() == month && recordDate.getYear() == year;
+                    } catch (Exception e) {
+                        return false;
+                    }
+                })
+                .collect(Collectors.toList());
+    }
+@GetMapping("/today-timein")
+public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails() {
+    String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+    
+    List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
+
+    // Filter only Present records with non-null Time In
+    List<Map<String, Object>> result = records.stream()
+        .filter(record -> 
+            "Present".equalsIgnoreCase(record.getAttendanceStatus()) &&
+            record.getTimeIn() != null
+        )
+        .map(record -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("employeeId", record.getEmployee().getId());
+            map.put("name", record.getEmployee().getFirstName());
+            map.put("branch", record.getEmployee().getBranch());
+            map.put("profileImage", record.getEmployee().getProfileImage());
+            map.put("timeIn", record.getTimeIn());
+            map.put("status", record.getAttendanceStatus());
+            return map;
+        })
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(result);
+}
+
+@GetMapping("/today-absent")
+public List<Map<String, Object>> getTodayAbsent() {
+    List<AttendanceRecord> absentRecords = attendanceService.getTodayAbsentRecords();
+
+    return absentRecords.stream().map(record -> {
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", record.getEmployee().getId());
+        map.put("name", record.getEmployee().getFirstName());
+        map.put("branch", record.getEmployee().getBranch());
+        map.put("mobile", record.getEmployee().getMobile());
+        map.put("date", record.getDate());
+        return map;
+    }).collect(Collectors.toList());
+}
+@GetMapping("/today-time-in-late")
+public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails() {
+    String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+    List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
+
+    // Define cutoff time (10:10 AM)
+    LocalTime cutoffTime = LocalTime.of(10, 10);
+
+    List<Map<String, Object>> result = records.stream()
+        .filter(record -> {
+            if (record.getTimeIn() != null) {
+                LocalTime timeIn = record.getTimeIn().toLocalTime();
+                return timeIn.isAfter(cutoffTime); // Only after 10:10 AM
+            }
+            return false;
+        })
+        .map(record -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("employeeId", record.getEmployee().getId());
+            map.put("name", record.getEmployee().getFirstName());
+            map.put("branch", record.getEmployee().getBranch());
+            map.put("profileImage", record.getEmployee().getProfileImage());
+            map.put("timeIn", record.getTimeIn());
+            map.put("status", record.getAttendanceStatus());
+            return map;
+        })
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(result);
+}
+@GetMapping("/late-arrivals")
+public ResponseEntity<List<Map<String, Object>>> getLateArrivalsByDate(@RequestParam String date) {
+    // Example input: "30/05/2025"
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    LocalDate parsedDate;
+    try {
+        parsedDate = LocalDate.parse(date, formatter);
+    } catch (DateTimeParseException e) {
+        return ResponseEntity.badRequest().body(Collections.singletonList(Map.of("error", "Invalid date format. Use dd/MM/yyyy")));
+    }
+
+    List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(date);
+
+    // Define cutoff time as 10:10 AM
+    LocalTime cutoffTime = LocalTime.of(10, 10);
+
+    List<Map<String, Object>> result = records.stream()
+        .filter(record -> {
+            if (record.getTimeIn() != null) {
+                LocalTime timeIn = record.getTimeIn().toLocalTime();
+                return timeIn.isAfter(cutoffTime);
+            }
+            return false;
+        })
+        .map(record -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("employeeId", record.getEmployee().getId());
+            map.put("name", record.getEmployee().getFirstName());
+            map.put("branch", record.getEmployee().getBranch());
+            map.put("mobile", record.getEmployee().getMobile()); // Optional
+            map.put("profileImage", record.getEmployee().getProfileImage()); // Optional
+            map.put("timeIn", record.getTimeIn().toString());
+            map.put("status", record.getAttendanceStatus());
+            return map;
+        })
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(result);
+}
 
 
- 
+  @GetMapping("/summary")
+public Map<String, Object> getDashboardSummary() {
+    Map<String, Object> summary = new HashMap<>();
+
+    long totalEmployees = employeeRepository.count();
+    summary.put("totalEmployees", totalEmployees);
+
+    // Formatters
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    String todayDate = LocalDate.now().format(formatter);
+    String yesterdayDate = LocalDate.now().minusDays(1).format(formatter);
+
+    // Fetch attendance records
+    List<AttendanceRecord> todayRecords = attendanceRecordRepository.findByDate(todayDate);
+    List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByDate(yesterdayDate);
+
+    // Today stats
+    long todayPresent = todayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
+    long todayAbsent = todayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
+    long todayLate = todayRecords.stream().filter(a -> 
+        a.getTimeIn() != null &&
+        a.getTimeIn().isAfter(LocalDateTime.of(LocalDate.now(), LocalTime.of(10, 15)))
+    ).count();
+    long todayOnTime = todayPresent - todayLate;
+
+    // Yesterday stats
+    long yesterdayPresent = yesterdayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
+    long yesterdayAbsent = yesterdayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
+    long yesterdayLate = yesterdayRecords.stream().filter(a -> 
+        a.getTimeIn() != null &&
+        a.getTimeIn().isAfter(LocalDateTime.of(LocalDate.now().minusDays(1), LocalTime.of(10, 15)))
+    ).count();
+    long yesterdayOnTime = yesterdayPresent - yesterdayLate;
+
+    // Percentage comparisons (today - yesterday) / yesterday * 100
+    summary.put("presentToday", todayPresent);
+    summary.put("absentToday", todayAbsent);
+    summary.put("lateArrivalsToday", todayLate);
+    summary.put("onTimeToday", todayOnTime);
+
+    summary.put("presentYesterday", yesterdayPresent);
+    summary.put("absentYesterday", yesterdayAbsent);
+    summary.put("lateArrivalsYesterday", yesterdayLate);
+    summary.put("onTimeYesterday", yesterdayOnTime);
+
+    summary.put("absentChangePercent", calculatePercentageChange(yesterdayAbsent, todayAbsent));
+    summary.put("lateChangePercent", calculatePercentageChange(yesterdayLate, todayLate));
+    summary.put("onTimeChangePercent", calculatePercentageChange(yesterdayOnTime, todayOnTime));
+
+    return summary;
+}
+
+private double calculatePercentageChange(long oldValue, long newValue) {
+    if (oldValue == 0 && newValue == 0) return 0.0;
+    if (oldValue == 0) return 100.0; // from 0 to something = 100% increase
+    return ((double) (newValue - oldValue) / oldValue) * 100;
+}
+
+
+
+//////////////////////filter
+@GetMapping("/monthly-summary")
+public ResponseEntity<?> getEmployeeMonthlySummary(
+        @RequestParam Long employeeId,
+        @RequestParam int month,
+        @RequestParam int year) {
+
+    Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
+    if (employeeOpt.isEmpty()) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+    }
+    Employee employee = employeeOpt.get();
+
+    // Get all attendance records for the employee
+    List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
+
+    // Date pattern for filtering (assuming dd/MM/yyyy format)
+    String monthPattern = String.format("/%02d/%d", month, year);
+
+    // Absent count for the month
+    long absentCount = records.stream()
+            .filter(r -> r.getAttendanceStatus() != null
+                    && r.getAttendanceStatus().equalsIgnoreCase("Absent")
+                    && r.getDate() != null
+                    && r.getDate().endsWith(monthPattern))
+            .count();
+
+    // Total missed times for the month (sum of missedTimes)
+    int totalMissedTimes = records.stream()
+            .filter(r -> r.getDate() != null
+                    && r.getDate().endsWith(monthPattern)
+                    && r.getMissedTimes() != null)
+            .mapToInt(AttendanceRecord::getMissedTimes)
+            .sum();
+
+    // Count leave permissions of type "Permission" for the month
+    List<LeavePermission> permissions = leavePermissionRepository.findByEmployeeId(employeeId);
+    long permissionCount = permissions.stream()
+            .filter(p -> p.getDate() != null
+                    && p.getDate().endsWith(monthPattern)
+                    && "Permission".equalsIgnoreCase(p.getLeaveType()))
+            .count();
+
+    // Total days in the month
+    int daysInMonth = java.time.YearMonth.of(year, month).lengthOfMonth();
+
+    // Prepare response
+    Map<String, Object> response = new HashMap<>();
+    response.put("employeeId", employee.getId());
+    response.put("firstName", employee.getFirstName());
+    response.put("lastName", employee.getLastName());
+    response.put("branch", employee.getBranch());
+    response.put("position", employee.getPosition());
+    response.put("mobile", employee.getMobile());
+    response.put("dob", employee.getDob());
+    response.put("email", employee.getEmail());
+    response.put("address", employee.getAddress());
+    response.put("salary", employee.getSalary());
+    response.put("absentCount", absentCount);
+    response.put("totalMissedTimes", totalMissedTimes);
+    response.put("permissionCount", permissionCount);
+    response.put("daysInMonth", daysInMonth);
+
+    return ResponseEntity.ok(response);
+}
+
+
 }

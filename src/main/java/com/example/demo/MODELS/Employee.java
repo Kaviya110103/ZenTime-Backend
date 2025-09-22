@@ -2,17 +2,18 @@ package com.example.demo.MODELS;
 
 
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
-
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.Id; 
 import jakarta.persistence.OneToMany;
 
-
+// i want a one table to caluclate a net payment for employee . so in this table i have a employeeId from Employeee table branch salary weekoff ,paindleavedaycounts,casualleaveday count , holiday count ,paind leave type ,and total paidleave count=paindleavedaycounts+,casualleaveday count+holiday count
 @Entity
 public class Employee {
 
@@ -93,12 +94,61 @@ public class Employee {
     @Column(name = "week_off")
     private String weekOff;
 
+@Column(name = "company_code")
+    private String companyCode;
 
     // Getters and Setters
+@Column(name = "guest_name")
+private String guestName;
+
+public String getGuestName() {
+    return guestName;
+}
+
+
+public void setGuestName(String guestName) {
+    this.guestName = guestName;
+}
+
+
+public LocalDateTime getGuestStartDate() {
+    return guestStartDate;
+}
+
+
+public void setGuestStartDate(LocalDateTime guestStartDate) {
+    this.guestStartDate = guestStartDate;
+}
+@Column(name = "client_id", nullable = false)
+    private Long clientId;
+
+
+@Column(name = "guest_start_date")
+private LocalDateTime guestStartDate;
 
 
     public Long getId() {
         return id;
+    }
+
+
+    public String getCompanyCode() {
+        return companyCode;
+    }
+
+
+    public void setCompanyCode(String companyCode) {
+        this.companyCode = companyCode;
+    }
+
+
+    public Long getClientId() {
+        return clientId;
+    }
+
+
+    public void setClientId(Long clientId) {
+        this.clientId = clientId;
     }
 
 

@@ -1,5 +1,6 @@
 package com.example.demo.controller;
 
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -7,6 +8,7 @@ import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,12 +17,14 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 import com.example.demo.MODELS.Announcement;
 import com.example.demo.repo.AnnouncementRepository;
 
 @RestController
+@CrossOrigin(origins = "*")
+
 @RequestMapping("/api/announcements")
+
 public class AnnouncementController {
 
     @Autowired
@@ -78,5 +82,26 @@ public class AnnouncementController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Announcement not found");
         }
     }
-}
 
+
+//  @PostMapping("/register")
+// public ResponseEntity<String> registerUser(@RequestBody RegisterRequest request) {
+//     String dbName = "userdb_" + request.getUsername().toLowerCase();
+    
+//     try (Connection connection = DriverManager.getConnection(
+//             "jdbc:mysql://<your-rds-endpoint>:3306/",
+//             "root", "yourpassword")) {
+
+//         Statement stmt = connection.createStatement();
+//         stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS " + dbName);
+
+//         // Optional: Run schema creation or migration
+//         // runFlywayMigrations(dbName);
+
+//         return ResponseEntity.ok("User registered and DB created");
+//     } catch (SQLException e) {
+//         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error: " + e.getMessage());
+//     }
+// }
+
+}

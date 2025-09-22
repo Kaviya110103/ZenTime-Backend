@@ -1,0 +1,30 @@
+{
+  "defaults": {
+    "project": 1,
+    "env": 1
+  },
+  "actives": {
+    "project": 1,
+    "env": 1
+  },
+  "projects": [
+    {
+      "idx": 1,
+      "id": "17255000000015547",
+      "name": "ZenTimebackend",
+      "domain": {
+        "id": "50028715798",
+        "name": "zentimebackend-60042713215.development"
+      },
+      "timezone": "Asia/Kolkata",
+      "env": [
+        {
+          "idx": 1,
+          "id": "60042713215",
+          "name": "Development",
+          "type": 3
+        }
+      ]
+    }
+  ]
+}

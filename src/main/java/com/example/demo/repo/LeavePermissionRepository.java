@@ -14,6 +14,6 @@ public interface LeavePermissionRepository extends JpaRepository<LeavePermission
     List<LeavePermission> findByStatusIgnoreCase(String status);
     List<LeavePermission> findByEmployeeIdAndStatus(Long employeeId, String status);
     List<LeavePermission> findByEmployeeIdAndDateAndStatus(Long employeeId, String date, String status);
-
+     long countByStatusIgnoreCase(String status);
 }
 

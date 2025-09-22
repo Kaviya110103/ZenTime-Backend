@@ -19,7 +19,8 @@ public class LeavePermission {
     @JoinColumn(name = "employee_id", nullable = false)
     private Employee employee;
 
-       
+//        @Column(name = "missed_times")
+// private Integer missedTimes;
     @ManyToOne
     @JoinColumn(name = "attendance_record_id")
     private AttendanceRecord attendanceRecord;
@@ -48,22 +49,28 @@ public class LeavePermission {
     private String status = "pending"; // Default to pending
 
 
-   
+   @Column(name = "start_time")
+private String startTime;
+
+@Column(name = "end_time")
+private String endTime;
 
 
     // Constructors
     public LeavePermission() {}
 
 
-    public LeavePermission(Employee employee, String date, String leaveType, String startDate, String endDate, String reason) {
-        this.employee = employee;
-        this.date = date;
-        this.leaveType = leaveType;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.reason = reason;
-        this.status = "pending";
-    }
+  public LeavePermission(Employee employee, String date, String leaveType, String startDate, String endDate, String reason, String startTime, String endTime) {
+    this.employee = employee;
+    this.date = date;
+    this.leaveType = leaveType;
+    this.startDate = startDate;
+    this.endDate = endDate;
+    this.reason = reason;
+    this.startTime = startTime;
+    this.endTime = endTime;
+    this.status = "pending";
+}
 
 
     // Getters and setters
@@ -110,4 +117,27 @@ public class LeavePermission {
 
 
     public void setStatus(String status) { this.status = status; }
+
+    // Getters & Setters
+public String getStartTime() {
+    return startTime;
+}
+
+public void setStartTime(String startTime) {
+    this.startTime = startTime;
+}
+
+public String getEndTime() {
+    return endTime;
+}
+
+public void setEndTime(String endTime) {
+    this.endTime = endTime;
+}
+
+
+
+
+
+
 }

@@ -2,13 +2,24 @@ package com.example.demo.controller;
 
 
 
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,10 +28,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.example.demo.MODELS.EmailDetails;
 import com.example.demo.MODELS.Employee;
+import com.example.demo.MODELS.EmployeeNetPayment;
+import com.example.demo.repo.EmployeeNetPaymentRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.service.EmailService;
 import com.example.demo.service.EmployeeService;
@@ -31,11 +46,14 @@ import com.example.demo.service.EmployeeService;
 @CrossOrigin(origins = "*") // Allow frontend to access
 public class EmployeeController {
 
+@Autowired
+private PasswordEncoder passwordEncoder;
 
     @Autowired
     private EmployeeService employeeService;
 
-
+@Autowired
+private EmployeeNetPaymentRepository employeeNetPaymentRepository;
    
     @Autowired
     private EmployeeRepository employeeRepository;
@@ -45,44 +63,108 @@ public class EmployeeController {
 private EmailService emailService;
 
    
+//   @PostMapping
+// public ResponseEntity<Employee> createEmployee(@RequestBody Employee employee) {
+//     // Step 1: Generate random password (optional)
+//     String plainPassword = employee.getPassword(); // or generate new one
+
+//     // Step 2: Encrypt the password before saving
+//     String encryptedPassword = passwordEncoder.encode(plainPassword);
+//     employee.setPassword(encryptedPassword);
+
+//     // Step 3: Save employee with encrypted password
+//     Employee createdEmployee = employeeService.saveEmployee(employee);
+
+//     // Step 4: Send email with plain password
+//     EmailDetails emailDetails = new EmailDetails();
+//     emailDetails.setSender("b.inba.ips444@gmail.com");
+//     emailDetails.setReceiver(employee.getEmail());
+//     emailDetails.setSubject("Employee Account Credentials - Indra Institute Of Education");
+
+//     String message = String.format(
+//         "Dear %s,\n\n" +
+//         "Welcome to Indra Institute of Education (IIE)! We are delighted to have you as part of our team.\n\n" +
+//         "Login Credentials:\n" +
+//         "Username: %s\n" +
+//         "Password: %s\n\n" +
+//         "Please update your password after logging in.\n\n" +
+//         "Regards,\n" +
+//         "Admin, IIE",
+//         employee.getFirstName(),
+//         employee.getUsername(),
+//         plainPassword // only email the unhashed version
+//     );
+
+//     emailDetails.setMessage(message);
+//     String emailResponse = emailService.sendEmail(emailDetails);
+//     System.out.println(emailResponse);
+
+//     return ResponseEntity.ok(createdEmployee);
+// }
+
+
     @PostMapping
-    public ResponseEntity<Employee> createEmployee(@RequestBody Employee employee) {
+    public ResponseEntity<Employee> createEmployee( @RequestBody Employee employee) {
+        if (employee.getClientId() == null) {
+            return ResponseEntity.badRequest().build(); // must supply clientId
+        }
+
+        // Step 1: Plain password (could be pre-set or generated)
+        String plainPassword = employee.getPassword();
+        if (plainPassword == null || plainPassword.isBlank()) {
+            // Optionally generate a random one if not provided
+            plainPassword = java.util.UUID.randomUUID().toString().substring(0, 8);
+            employee.setPassword(plainPassword);
+        }
+
+        // Step 2: Encrypt password
+        String encryptedPassword = passwordEncoder.encode(plainPassword);
+        employee.setPassword(encryptedPassword);
+
+        // Step 3: Save (service will assign clientEmployeeId)
         Employee createdEmployee = employeeService.saveEmployee(employee);
 
-        // Send email to the newly created employee
+        // Step 4: Send email with plain password
         EmailDetails emailDetails = new EmailDetails();
-        emailDetails.setSender("kaviyagvg2023@gmail.com"); // Replace with your email
-        emailDetails.setReceiver(employee.getEmail());
+        emailDetails.setSender("b.inba.ips444@gmail.com");
+        emailDetails.setReceiver(createdEmployee.getEmail());
         emailDetails.setSubject("Employee Account Credentials - Indra Institute Of Education");
 
         String message = String.format(
             "Dear %s,\n\n" +
-            "Welcome to Indra Institute of Education (IIE)! We are delighted to have you as part of our team and look forward to your valuable contributions.\n\n" +
-            "To get started, please find your official login credentials below:\n\n" +
+            "Welcome to Indra Institute of Education (IIE)! We are delighted to have you as part of our team.\n\n" +
+            "Login Credentials:\n" +
             "Username: %s\n" +
             "Password: %s\n\n" +
-            "Please log in using these credentials and update your password upon your first login for security purposes. If you encounter any issues, feel free to reach out to the IT support team at [Support Email/Contact Number].\n\n" +
-            "We are excited to embark on this journey with you and wish you success in your role.\n\n" +
-            "Best Regards,\n" +
-            "[Your Name]\n" +
-            "Admin, Indra Institute of Education (IIE)\n" +
-            "[Your Contact Information]",
-            employee.getFirstName(),
-            employee.getUsername(),
-            employee.getPassword()
+            "Your Company Code: %s\n\n" +
+            "Please update your password after logging in.\n\n" +
+            "Regards,\n" +
+            "Admin, IIE",
+            createdEmployee.getFirstName(),
+            createdEmployee.getUsername(),
+            createdEmployee.getCompanyCode(),
+            plainPassword // unhashed version
         );
 
         emailDetails.setMessage(message);
-
         String emailResponse = emailService.sendEmail(emailDetails);
-        System.out.println(emailResponse); // Log the email response for debugging
+        System.out.println(emailResponse);
 
         return ResponseEntity.ok(createdEmployee);
     }
 
 
+@GetMapping("/{id}/profile-image")
+public ResponseEntity<String> getProfileImage(@PathVariable Long id) {
+    Optional<Employee> optionalEmployee = employeeRepository.findById(id);
 
+    if (!optionalEmployee.isPresent()) {
+        return ResponseEntity.notFound().build();
+    }
 
+    String profileImageUrl = optionalEmployee.get().getProfileImage();
+    return ResponseEntity.ok(profileImageUrl);
+}
 
 
 
@@ -206,6 +288,145 @@ public ResponseEntity<Void> deleteEmployeeByUsername(@PathVariable String userna
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();  // Return 404 if employee not found
     }
 }
+  // Upload or update profile image URL
+    @PutMapping("/{id}/profile-image")
+    public ResponseEntity<Employee> updateProfileImage(
+            @PathVariable Long id,
+            @RequestParam("imageUrl") String imageUrl) {
+
+        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+
+        if (!optionalEmployee.isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Employee employee = optionalEmployee.get();
+        employee.setProfileImage(imageUrl);
+        employeeRepository.save(employee);
+
+        return ResponseEntity.ok(employee);
+    }
+
+    // Delete profile image (set to null or default)
+    @DeleteMapping("/{id}/profile-image")
+    public ResponseEntity<Employee> deleteProfileImage(@PathVariable Long id) {
+        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+
+        if (!optionalEmployee.isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Employee employee = optionalEmployee.get();
+        employee.setProfileImage(null);  // Or set a default image path
+        employeeRepository.save(employee);
+
+        return ResponseEntity.ok(employee);
+    }
+
+
+@PostMapping("/login")
+public ResponseEntity<?> loginEmployee(@RequestBody Map<String, String> loginData) {
+    String username = loginData.get("username");
+    String rawPassword = loginData.get("password");
+
+    Optional<Employee> employeeOptional = employeeRepository.findByUsername(username);
+
+    if (employeeOptional.isPresent()) {
+        Employee employee = employeeOptional.get();
+        if (passwordEncoder.matches(rawPassword, employee.getPassword())) {
+            return ResponseEntity.ok(employee); // success = valid JSON
+        }
+    }
+
+    // failure = also return JSON
+    return ResponseEntity.status(401).body(Map.of("error", "Invalid username or password"));
+}
+
+
+
+
+
+
+
+    // Upload image
+    @PutMapping("/{id}/upload-image")
+    public ResponseEntity<?> uploadImage(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
+        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+        if (!optionalEmployee.isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+            Path uploadPath = Paths.get("uploads");
+            Files.createDirectories(uploadPath);
+            Path filePath = uploadPath.resolve(fileName);
+            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+            String imageUrl = "http://192.168.1.4:8080/api/employees/image/" + fileName;
+
+            Employee employee = optionalEmployee.get();
+            employee.setProfileImage(imageUrl);
+            employeeRepository.save(employee);
+
+            return ResponseEntity.ok(imageUrl);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body("Upload failed");
+        }
+    }
+
+    // Serve image
+    @GetMapping("/emp-image/{filename}")
+    public ResponseEntity<Resource> getImage(@PathVariable String filename) {
+        try {
+            Path path = Paths.get("uploads").resolve(filename);
+            Resource resource = new UrlResource(path.toUri());
+
+            if (!resource.exists()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.IMAGE_JPEG)
+                    .body(resource);
+        } catch (MalformedURLException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+
+
+
+
+    @PostMapping("/calculate-net-payment")
+public ResponseEntity<EmployeeNetPayment> calculateNetPayment(
+        @RequestParam Long employeeId,
+        @RequestParam int month,
+        @RequestParam int year,
+        @RequestParam int paidLeaveDayCount,
+        @RequestParam int casualLeaveDayCount,
+        @RequestParam int holidayCount,
+        @RequestParam String paidLeaveType,
+        @RequestParam int presentDays
+) {
+    Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
+    if (employeeOpt.isEmpty()) {
+        return ResponseEntity.badRequest().build();
+    }
+    Employee employee = employeeOpt.get();
+EmployeeNetPayment payment = employeeService.calculateNetPayment(
+    employee, month, year, paidLeaveDayCount, casualLeaveDayCount, holidayCount, paidLeaveType, presentDays
+);
+    employeeNetPaymentRepository.save(payment);
+    return ResponseEntity.ok(payment);
+}
+
 
 }
+
+
+
+
+
+
 

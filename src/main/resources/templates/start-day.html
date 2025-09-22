@@ -1,29 +1,265 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IIE Events Calendar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#2f2a2a;
+      --surface:#f6f6f7;
+      --surface-2:#ffffff;
+      --brand:#6c2bd9;
+      --brand-dark:#4a1fb8;
+      --accent:#f3443c;
+      --accent-dark:#d73730;
+      --ink:#1f1c1c;
+      --muted:#7a7480;
+      --pill:#fde486;
+      --lav:#f3e8ff;
+      --divider:#eeeaf7;
+      --radius:18px;
+      --shadow:0 10px 24px rgba(24,14,46,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--ink);
+      font-family:'Poppins',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      line-height:1.45;
+    }
+    .wrap{max-width:1040px;margin:56px auto;padding:24px}
+    .app{
+      background:var(--surface); border-radius:24px; padding:36px; box-shadow:var(--shadow);
+      position:relative; min-height:640px;
+    }
+    .grid{display:grid; grid-template-columns:1.4fr 1fr; gap:28px}
+    /* Banner */
+    .banner{background:var(--pill); border-radius:20px; padding:20px 24px; display:flex; align-items:center; gap:16px; margin-bottom:18px}
+    .banner h2{margin:0 0 6px;font-size:22px}
+    .banner p{margin:0; color:#4c3e2a; font-size:13px; max-width:560px}
+    .banner .illus{
+      margin-left:auto; width:72px; height:72px; border-radius:16px; background:linear-gradient(135deg,#ffdcae,#ffeaa7);
+      display:grid;place-items:center; position:relative; overflow:hidden
+    }
+    .illus svg{width:44px;height:44px}
+
+    /* Calendar + Events columns */
+    .col{background:var(--surface-2); border-radius:22px; padding:22px; box-shadow:var(--shadow)}
+    .calendar .head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
+    .calendar .title{font-weight:700; color:var(--brand); letter-spacing:.2px}
+    .navbtns{display:flex; gap:8px}
+    .iconbtn{width:34px;height:34px;border-radius:10px;border:none;background:var(--lav);color:var(--brand);font-weight:700;cursor:pointer}
+
+    .week{display:grid; grid-template-columns:repeat(7,1fr); gap:12px; margin-top:12px; color:var(--muted); font-size:12px}
+    .days{display:grid; grid-template-columns:repeat(7,1fr); gap:12px; margin-top:10px}
+    .day{aspect-ratio:1/1; display:grid; place-items:center; border-radius:14px; background:#fff; box-shadow:inset 0 0 0 1px #f0ecfb; cursor:pointer}
+    .day.is-today{background:#fff0f0; box-shadow:inset 0 0 0 2px #ffd2d2}
+    .day.has-event{background:#ef3a2e; color:#fff; font-weight:700; box-shadow:none}
+    .day.selected{outline:3px solid var(--brand);}
+
+    /* Right column: upcoming */
+    .upcoming .sec-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
+    .subtle{font-size:12px; color:var(--muted)}
+    .small-link{font-size:12px; text-decoration:none; color:var(--brand);}
+    .event-card{display:flex; gap:14px; align-items:center; border-radius:16px; padding:14px; border:1px solid var(--divider); box-shadow:var(--shadow); background:#fff}
+    .event-card + .event-card{margin-top:14px}
+    .event-ribbon{width:8px; border-radius:8px; align-self:stretch; background:linear-gradient(#7c3aed,#6d28d9)}
+    .event-body{flex:1}
+    .event-title{margin:0; font-size:14px; font-weight:600}
+    .event-time{margin:4px 0 10px; font-size:12px; color:var(--muted)}
+    .register{border:none; background:var(--accent); color:#fff; padding:9px 16px; border-radius:12px; font-weight:600; cursor:pointer}
+    .register:hover{background:var(--accent-dark)}
+    .bubble{margin-left:auto; width:34px; height:34px; border-radius:999px; background:var(--lav); display:grid; place-items:center; color:var(--brand)}
+
+    /* Event Detail Card */
+    .detail-wrap{display:flex; justify-content:flex-end; margin-top:30px}
+    .detail{width:360px; background:#fff; border-radius:20px; padding:0 0 16px; box-shadow:var(--shadow)}
+    .detail .thumb{height:92px; background:linear-gradient(90deg,#e9e8ff,#f6f6ff); border-top-left-radius:20px; border-top-right-radius:20px; display:grid; place-items:center}
+    .badge{background:#fff; border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; box-shadow:var(--shadow)}
+    .detail .content{padding:14px 18px}
+    .detail h3{margin:6px 0 8px; font-size:16px}
+    .detail p{margin:0 0 12px; font-size:12px; color:var(--muted)}
+    .detail ul{margin:0; padding-left:18px; font-size:13px}
+    .detail .cta{margin-top:14px; padding:0 18px}
+    .detail .cta button{width:100%; border:none; background:var(--accent); color:#fff; padding:12px 16px; border-radius:12px; font-weight:700; cursor:pointer}
+
+    @media (max-width: 980px){
+      .grid{grid-template-columns:1fr}
+      .detail-wrap{justify-content:center}
+    }
+  </style>
 </head>
 <body>
-    <input type="number" id="employeeId" placeholder="Employee ID" />
-    <button onclick="startDay()">Start Day</button>
-    
-    <script>
-      function startDay() {
-        const employeeId = document.getElementById("employeeId").value;
-    
-        fetch("http://localhost:8080/api/attendance/start-day?employeeId=" + employeeId, {
-          method: "POST"
-        })
-        .then(res => res.json())
-        .then(recordId => {
-          localStorage.setItem("attendanceRecordId", recordId);
-          alert("Day started! Now mark time-in.");
-          window.location.href = "time-in.html";
-        });
-      }
-    </script>
-     
+  <div class="wrap">
+    <div class="app">
+      <div class="grid">
+        <!-- Left: Banner + Calendar -->
+        <div>
+          <div class="banner">
+            <div>
+              <h2>Welcome to IIE Events Calendar</h2>
+              <p>Discover every important event, workshop, and celebration at IIE. Stay connected to learning, growth, and innovation—all in one place.</p>
+            </div>
+            <div class="illus" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="3" ry="3"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+            </div>
+          </div>
+
+          <div class="col calendar">
+            <div class="head">
+              <div class="title">September 2025</div>
+              <div class="navbtns">
+                <button class="iconbtn" aria-label="Previous Month">◀</button>
+                <button class="iconbtn" aria-label="Next Month">▶</button>
+              </div>
+            </div>
+            <div class="week">
+              <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+            </div>
+            <div class="days"></div>
+          </div>
+        </div>
+
+        <!-- Right: Upcoming events placeholder -->
+        <div class="col upcoming">
+          <div class="sec-head">
+           <div class="detail-wrap">
+                       
+
+        <article class="detail" aria-label="Event detail">
+          <div class="thumb">
+             <h3 style="margin:0;font-size:16px">Up Coming Events SEPTEMBER EVENTS</h3>
+            <span class="badge">INDRA INSTITUTE OF EDUCATION
+
+</span>
+          </div>
+          <div class="content">
+            <h3>Event Details</h3>
+            <p>Select a date on the calendar to view events.</p>
+          </div>
+<div class="cta">
+  <a href="https://forms.gle/dbrBsNyKSe53hRN29" target="_blank" class="register">Register</a>
+</div>
+        </article>
+      </div>
+        </div>
+      </div>
+
+      <!-- Standalone event detail card -->
+      
+    </div>
+  </div>
+
+<script>
+// --- Event Data (from doc) ---
+const events = {
+  "2025-09-10": ["Placement Training (Exclusive for IIE) – 10 AM to 2 PM"],
+  "2025-09-13": ["Placement Training (Exclusive for IIE) – 10 AM to 2 PM"],
+  "2025-09-14": ["AWS & DevOps Webinar (Open to all) – 11 AM to 1 PM"],
+  "2025-09-20": ["Ethical Hacking Webinar (Open to all) – 11 AM to 1 PM"],
+  "2025-09-23": ["Learn UI/UX @ FREE – Day 1 (10.30 AM to 1.30 PM)"],
+  "2025-09-24": ["Learn UI/UX @ FREE – Day 2 (10.30 AM to 1.30 PM)"],
+  "2025-09-25": ["Learn UI/UX @ FREE – Day 3 (10.30 AM to 1.30 PM)"]
+};
+
+let currentDate = new Date(2025, 8); // Default: September 2025
+
+const titleEl = document.querySelector(".calendar .title");
+const daysEl = document.querySelector(".calendar .days");
+const detail = document.querySelector(".detail");
+const detailContent = detail.querySelector(".content");
+const detailBtn = detail.querySelector(".cta button");
+
+function renderCalendar() {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const today = new Date();
+
+  const monthName = currentDate.toLocaleString("default", { month: "long" });
+  titleEl.textContent = `${monthName} ${year}`;
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  daysEl.innerHTML = "";
+
+  let startOffset = (firstDay + 6) % 7;
+  for (let i = 0; i < startOffset; i++) {
+    const empty = document.createElement("div");
+    empty.className = "day empty";
+    daysEl.appendChild(empty);
+  }
+
+for (let d = 1; d <= daysInMonth; d++) {
+  const date = new Date(year, month, d);
+  const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  const dayEl = document.createElement("div");
+  dayEl.className = "day";
+  dayEl.textContent = d;
+
+  if (date.toDateString() === today.toDateString()) {
+    dayEl.classList.add("is-today");
+  }
+  if (events[dateKey]) {
+    dayEl.classList.add("has-event");
+  }
+
+  dayEl.addEventListener("click", () => {
+    document.querySelectorAll(".day").forEach(d => d.classList.remove("selected"));
+    dayEl.classList.add("selected");
+    showDayDetails(dateKey);
+  });
+
+  daysEl.appendChild(dayEl);
+}
+}
+
+function showDayDetails(dateKey) {
+  const dayEvents = events[dateKey];
+  if (dayEvents && dayEvents.length > 0) {
+    detailContent.innerHTML = `
+      <h3>Events on ${dateKey}</h3>
+      <ul>${dayEvents.map(ev => `<li>${ev}</li>`).join("")}</ul>
+    `;
+    detailBtn.disabled = false;
+    detailBtn.textContent = "Register";
+  } else {
+    detailContent.innerHTML = `<h3>No Events</h3><p>No scheduled events on ${dateKey}.</p>`;
+    detailBtn.disabled = true;
+    detailBtn.textContent = "No Registration";
+  }
+}
+
+document.querySelector(".navbtns button[aria-label='Previous Month']")
+  .addEventListener("click", () => {
+    currentDate.setMonth(currentDate.getMonth() - 1);
+    renderCalendar();
+  });
+
+document.querySelector(".navbtns button[aria-label='Next Month']")
+  .addEventListener("click", () => {
+    currentDate.setMonth(currentDate.getMonth() + 2);
+    renderCalendar();
+  });
+
+renderCalendar();
+
+// Auto-load today's details if in same month
+const todayKey = new Date().toISOString().split("T")[0];
+if (events[todayKey]) {
+  showDayDetails(todayKey);
+}
+</script>
+
 </body>
 </html>

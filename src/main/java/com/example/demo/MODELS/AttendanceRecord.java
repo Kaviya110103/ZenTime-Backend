@@ -38,10 +38,13 @@ public class AttendanceRecord {
 
     private String dayStatus; // "Completed"
 
+    private String location;
+
     private String attendanceStatus; // "Present", "Absent"
 
     private String date;
 
+    private String TimoutReason;
 
     private Integer missedTimes; // Total missed minutes (timeIn + timeOut deviation)
     public AttendanceRecord(Integer missedtimes, String attendancelocation) {
@@ -57,6 +60,60 @@ public class AttendanceRecord {
 
     public void setMissedtimes(Integer missedtimes) {
         this.missedTimes = missedtimes;
+    }
+
+        public String getLocation() {
+        return location;
+    }
+
+
+
+    public AttendanceRecord(Long id, Employee employee, LocalDateTime timeIn, byte[] imageIn, LocalDateTime timeOut,
+                byte[] imageOut, String dayStatus, String location, String attendanceStatus, String date,
+                Integer missedTimes, String attendancelocation, List<LeavePermission> leavePermissions) {
+            this.id = id;
+            this.employee = employee;
+            this.timeIn = timeIn;
+            this.imageIn = imageIn;
+            this.timeOut = timeOut;
+            this.imageOut = imageOut;
+            this.dayStatus = dayStatus;
+            this.location = location;
+            this.attendanceStatus = attendanceStatus;
+            this.date = date;
+            this.missedTimes = missedTimes;
+            this.attendancelocation = attendancelocation;
+            this.leavePermissions = leavePermissions;
+        }
+
+
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+
+
+    public Integer getMissedTimes() {
+        return missedTimes;
+    }
+
+
+
+    public void setMissedTimes(Integer missedTimes) {
+        this.missedTimes = missedTimes;
+    }
+
+
+
+    public List<LeavePermission> getLeavePermissions() {
+        return leavePermissions;
+    }
+
+
+
+    public void setLeavePermissions(List<LeavePermission> leavePermissions) {
+        this.leavePermissions = leavePermissions;
     }
 
         private String attendancelocation;
@@ -162,6 +219,15 @@ public class AttendanceRecord {
 
     @OneToMany(mappedBy = "attendanceRecord", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<LeavePermission> leavePermissions;
+    public String getTimoutReason() {
+        return TimoutReason;
+    }
+
+
+
+    public void setTimoutReason(String timoutReason) {
+        TimoutReason = timoutReason;
+    }
 
 
 }

@@ -3,207 +3,323 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee Attendance System</title>
+    <title>Client Registration</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
+            background-color: #f5f7f9;
+            color: #333;
             line-height: 1.6;
         }
-        h1 {
-            text-align: center;
-        }
+        
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
+            padding: 20px;
         }
-        .section {
-            margin-bottom: 30px;
+        
+        header {
+            background: linear-gradient(135deg, #2c3e50, #4a6491);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: 20px;
         }
-        .section h2 {
-            margin-bottom: 10px;
+        
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
-        .section input[type="number"], .section input[type="file"] {
-            margin: 5px 0;
-            padding: 5px;
+        
+        .form-section {
+            margin-bottom: 25px;
         }
-        .section button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
+        
+        .section-title {
+            font-size: 1.2rem;
+            color: #2c3e50;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eaecef;
+        }
+        
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 0 -10px 15px;
+        }
+        
+        .form-group {
+            flex: 1 0 300px;
+            padding: 0 10px;
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4a6491;
+            box-shadow: 0 0 0 2px rgba(74, 100, 145, 0.2);
+        }
+        
+        .error {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .required:after {
+            content: " *";
+            color: #e74c3c;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #2c3e50, #4a6491);
             color: white;
             border: none;
+            padding: 14px 28px;
+            font-size: 16px;
+            border-radius: 4px;
             cursor: pointer;
-            margin-top: 10px;
+            display: block;
+            margin: 30px auto 0;
+            transition: all 0.3s;
+            font-weight: 600;
         }
-        .section button:hover {
-            background-color: #45a049;
+        
+        button:hover {
+            background: linear-gradient(135deg, #4a6491, #2c3e50);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
         }
-        #result {
+        
+        .success-message {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 4px;
             margin-top: 20px;
-            font-weight: bold;
-        }
-        .hidden {
             display: none;
+        }
+        
+        .password-note {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .form-group {
+                flex: 1 0 100%;
+            }
         }
     </style>
 </head>
 <body>
-
-    <h1>Employee Attendance System</h1>
-
-    <!-- Check Attendance Status -->
-    <div class="container section">
-        <h2>Check Attendance Status</h2>
-        <input type="number" id="employeeId" placeholder="Employee ID">
-        <button onclick="checkAttendanceStatus()">Check Status</button>
-        <p id="result"></p>
-    </div>
-
-    <!-- Start Day -->
-    <div class="container section hidden" id="startDaySection">
-        <h2>Start Day</h2>
-        <input type="number" id="startEmployeeId" placeholder="Employee ID">
-        <button onclick="startDay()">Start Day</button>
-    </div>
-
-    <!-- Mark Time-In -->
-    <div class="container section hidden" id="timeInSection">
-        <h2>Mark Time-In</h2>
-        <input type="number" id="timeInRecordId" placeholder="Record ID">
-        <input type="file" id="timeInImage">
-        <button onclick="markTimeIn()">Mark Time-In</button>
-    </div>
-
-    <!-- Mark Time-Out -->
-    <div class="container section hidden" id="timeOutSection">
-        <h2>Mark Time-Out</h2>
-        <input type="number" id="timeOutRecordId" placeholder="Record ID">
-        <input type="file" id="timeOutImage">
-        <button onclick="markTimeOut()">Mark Time-Out</button>
-    </div>
-
-    <!-- Mark Absent -->
-    <div class="container section hidden" id="markAbsentSection">
-        <h2>Mark Absent</h2>
-        <input type="number" id="absentEmployeeId" placeholder="Employee ID">
-        <button onclick="markAbsent()">Mark Absent</button>
+    <div class="container">
+        <header>
+            <h1>Client Registration</h1>
+            <p>Register your company as a new client</p>
+        </header>
+        
+        <div class="form-container">
+            <form id="clientForm">
+                <div class="form-section">
+                    <h2 class="section-title">Company Information</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="companyName" class="required">Company Name</label>
+                            <input type="text" id="companyName" name="companyName" required>
+                            <div class="error" id="companyNameError">Please enter a valid company name</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="companyCode" class="required">Company Code</label>
+                            <input type="text" id="companyCode" name="companyCode" required>
+                            <div class="error" id="companyCodeError">Please enter a company code</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="employeeCount" class="required">Employee Count</label>
+                            <input type="number" id="employeeCount" name="employeeCount" min="1" required>
+                            <div class="error" id="employeeCountError">Please enter a valid number (minimum 1)</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="workingHours" class="required">Working Hours</label>
+                            <input type="text" id="workingHours" name="workingHours" placeholder="e.g., 9:00 AM - 5:00 PM" required>
+                            <div class="error" id="workingHoursError">Please specify working hours</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="registeredDate" class="required">Registration Date</label>
+                            <input type="date" id="registeredDate" name="registeredDate" required>
+                            <div class="error" id="registeredDateError">Please select a registration date</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="address" class="required">Company Address</label>
+                            <input type="text" id="address" name="address" required>
+                            <div class="error" id="addressError">Please enter a valid address</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h2 class="section-title">Contact Information</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="clientName" class="required">Contact Person Name</label>
+                            <input type="text" id="clientName" name="clientName" required>
+                            <div class="error" id="clientNameError">Please enter a valid name</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="mobileNumber" class="required">Mobile Number</label>
+                            <input type="tel" id="mobileNumber" name="mobileNumber" pattern="[0-9]{10,15}" required>
+                            <div class="error" id="mobileNumberError">Please enter a valid mobile number (10-15 digits)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="emailAddress" class="required">Email Address</label>
+                            <input type="email" id="emailAddress" name="emailAddress" required>
+                            <div class="error" id="emailAddressError">Please enter a valid email address</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <h2 class="section-title">Account Information</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username" class="required">Username</label>
+                            <input type="text" id="username" name="username" required>
+                            <div class="error" id="usernameError">Please enter a username</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password">
+                            <div class="password-note">If left blank, a password will be automatically generated</div>
+                            <div class="error" id="passwordError">Password must be at least 6 characters long</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit">Register Client</button>
+            </form>
+            
+            <div class="success-message" id="successMessage">
+                Client registration successful! A confirmation email has been sent.
+            </div>
+        </div>
     </div>
 
     <script>
-        const API_URL = "http://localhost:8080";
-
-        // Function to start the day
-        function startDay() {
-            const employeeId = document.getElementById('startEmployeeId').value;
-            const formData = new FormData();
-            formData.append('employeeId', employeeId);
-
-            fetch(`${API_URL}/api/attendance/start-day`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.text())
-            .then(alert)
-            .catch(error => alert('Error: ' + error));
-        }
-
-        // Function to mark time-in
-        function markTimeIn() {
-            const recordId = document.getElementById('timeInRecordId').value;
-            const image = document.getElementById('timeInImage').files[0];
-            const formData = new FormData();
-            formData.append('recordId', recordId);
-            formData.append('imageIn', image);
-
-            fetch(`${API_URL}/api/attendance/mark-time-in`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.text())
-            .then(alert)
-            .catch(error => alert('Error: ' + error));
-        }
-
-        // Function to mark time-out
-        function markTimeOut() {
-            const recordId = document.getElementById('timeOutRecordId').value;
-            const image = document.getElementById('timeOutImage').files[0];
-            const formData = new FormData();
-            formData.append('recordId', recordId);
-            formData.append('imageOut', image);
-
-            fetch(`${API_URL}/api/attendance/mark-time-out`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.text())
-            .then(alert)
-            .catch(error => alert('Error: ' + error));
-        }
-
-        // Function to mark absent
-        function markAbsent() {
-            const employeeId = document.getElementById('absentEmployeeId').value;
-            const formData = new FormData();
-            formData.append('employeeId', employeeId);
-
-            fetch(`${API_URL}/api/attendance/mark-absent`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.text())
-            .then(alert)
-            .catch(error => alert('Error: ' + error));
-        }
-
-        // Function to check attendance status
-        async function checkAttendanceStatus() {
-            const employeeId = document.getElementById("employeeId").value;
-
-            if (!employeeId) {
-                alert("Please enter the Employee ID.");
-                return;
+        document.getElementById('clientForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Clear previous errors
+            const errorElements = document.querySelectorAll('.error');
+            errorElements.forEach(el => el.style.display = 'none');
+            
+            // Basic validation
+            let isValid = true;
+            const requiredFields = document.querySelectorAll('[required]');
+            
+            requiredFields.forEach(field => {
+                if (!field.value.trim()) {
+                    document.getElementById(field.id + 'Error').style.display = 'block';
+                    isValid = false;
+                }
+            });
+            
+            // Mobile number validation
+            const mobileNumber = document.getElementById('mobileNumber');
+            if (mobileNumber.value && !/^[0-9]{10,15}$/.test(mobileNumber.value)) {
+                document.getElementById('mobileNumberError').style.display = 'block';
+                isValid = false;
             }
-
+            
+            // Email validation
+            const email = document.getElementById('emailAddress');
+            if (email.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+                document.getElementById('emailAddressError').style.display = 'block';
+                isValid = false;
+            }
+            
+            if (!isValid) return;
+            
+            // Prepare data for submission
+            const formData = {
+                clientName: document.getElementById('clientName').value,
+                companyName: document.getElementById('companyName').value,
+                companyCode: document.getElementById('companyCode').value,
+                mobileNumber: document.getElementById('mobileNumber').value,
+                emailAddress: document.getElementById('emailAddress').value,
+                address: document.getElementById('address').value,
+                employeeCount: parseInt(document.getElementById('employeeCount').value),
+                registeredDate: document.getElementById('registeredDate').value,
+                workingHours: document.getElementById('workingHours').value,
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value || undefined
+            };
+            
             try {
-                const response = await fetch(`${API_URL}/api/attendance/check-attendance-status?employeeId=${employeeId}`);
-
+                // Send data to server
+                const response = await fetch('https://iie.iieawstesting.in/api/clients', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
                 if (response.ok) {
-                    const result = await response.text();
-                    document.getElementById("result").innerText = result;
-
-                    // Show/hide relevant sections based on attendance status
-                    if (result.includes("Present")) {
-                        document.getElementById("timeInSection").classList.add("hidden");
-                        document.getElementById("timeOutSection").classList.remove("hidden");
-                        document.getElementById("markAbsentSection").classList.add("hidden");
-                    } else {
-                        document.getElementById("timeInSection").classList.remove("hidden");
-                        document.getElementById("timeOutSection").classList.add("hidden");
-                        document.getElementById("markAbsentSection").classList.remove("hidden");
-                    }
-                } else if (response.status === 404) {
-                    document.getElementById("result").innerText = "No attendance record found for today.";
-                    document.getElementById("timeInSection").classList.remove("hidden");
-                    document.getElementById("timeOutSection").classList.add("hidden");
-                    document.getElementById("markAbsentSection").classList.remove("hidden");
+                    const data = await response.json();
+                    document.getElementById('successMessage').style.display = 'block';
+                    document.getElementById('clientForm').reset();
+                    
+                    // Scroll to success message
+                    document.getElementById('successMessage').scrollIntoView({
+                        behavior: 'smooth'
+                    });
                 } else {
-                    document.getElementById("result").innerText = "An error occurred. Please try again later.";
+                    throw new Error('Server responded with an error');
                 }
             } catch (error) {
-                console.error('Error:', error);
-                document.getElementById("result").innerText = "An error occurred. Please try again later.";
-            }
-        }
-
-        // Automatically check the attendance status when the page loads or employeeId is entered (similar to React useEffect)
-        document.addEventListener('DOMContentLoaded', () => {
-            const employeeId = document.getElementById("employeeId").value;
-            if (employeeId) {
-                checkAttendanceStatus();
+                alert('Registration failed: ' + error.message);
             }
         });
+        
+        // Set today's date as default for registeredDate
+        document.getElementById('registeredDate').valueAsDate = new Date();
     </script>
-
 </body>
 </html>
