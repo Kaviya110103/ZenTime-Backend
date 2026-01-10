@@ -6,9 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-
 import org.springframework.data.jpa.repository.JpaRepository;
-
 
 import com.example.demo.MODELS.Employee;
 
@@ -21,5 +19,6 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
      List<Employee> findByBranch(String branch);
         //  List<Employee> findByBranch(String branchName);
 List<Employee> findByGuestNameIsNotNullAndGuestStartDateBefore(LocalDateTime cutoffTime);
+List<Employee> findByClientId(Long clientId);
 
 }

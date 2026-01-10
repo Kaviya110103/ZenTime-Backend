@@ -1,8 +1,18 @@
 package com.example.demo.MODELS;
 
-import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import java.time.LocalDate;
+import java.util.List;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 @Entity
 @Table(name = "clients")
@@ -30,6 +40,8 @@ public class Client {
     @NotBlank
     private String address;
 
+     @Column(name = "branch_name")
+    private List<String> branchNames;
     @Min(1)
     private Integer employeeCount;
 
@@ -90,4 +102,11 @@ public class Client {
 
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
+public void setBranchNames(List<String> branchNames) {
+        this.branchNames = branchNames;
+    }
+
+     public List<String> getBranchNames() {
+        return branchNames;
+    }
 }

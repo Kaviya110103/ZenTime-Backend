@@ -1,6 +1,10 @@
 package com.example.demo.MODELS;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "locations")
@@ -24,6 +28,8 @@ public class Location {
 
     /** Radius in metres */
     private Integer radius;
+    
+    
 
     /* ─────────── Getters & setters ─────────── */
 
