@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Branch CRUD</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            padding: 30px;
+        }
+        h1 {
+            color: #333;
+        }
+        .card {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            width: 400px;
+        }
+        input, button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 8px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        pre {
+            background: #eee;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Branch Management</h1>
+
+<!-- CREATE -->
+<div class="card">
+    <h3>Create Branches</h3>
+    <input id="branchesInput" placeholder="Chennai,Bangalore,Hyderabad">
+    <button onclick="createBranches()">Create</button>
+</div>
+
+<!-- READ -->
+<div class="card">
+    <h3>View All Branches</h3>
+    <button onclick="getBranches()">Get Branches</button>
+    <pre id="branchList"></pre>
+</div>
+
+<!-- UPDATE -->
+<div class="card">
+    <h3>Update Branch</h3>
+    <input id="oldBranch" placeholder="Old Branch Name">
+    <input id="newBranch" placeholder="New Branch Name">
+    <button onclick="updateBranch()">Update</button>
+</div>
+
+<!-- DELETE -->
+<div class="card">
+    <h3>Delete Branch</h3>
+    <input id="deleteBranch" placeholder="Branch Name">
+    <button onclick="deleteBranch()">Delete</button>
+</div>
+
+<script>
+    const BASE_URL = "http://localhost:8080/api/clients";
+
+    // CREATE → POST /branch
+    function createBranches() {
+        const branches = document.getElementById("branchesInput")
+            .value.split(",")
+            .map(b => b.trim())
+            .filter(b => b !== "");
+
+        fetch(`${BASE_URL}/branch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ branchNames: branches })
+        })
+        .then(res => res.text())
+        .then(msg => alert(msg))
+        .catch(err => alert("Error: " + err));
+    }
+
+    // READ → GET /branch/all
+    function getBranches() {
+        fetch(`${BASE_URL}/branch/all`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("branchList").textContent =
+                    JSON.stringify(data, null, 2);
+            })
+            .catch(err => alert("Error: " + err));
+    }
+
+    // UPDATE → PUT /branch/{old}?newBranchName=...
+    function updateBranch() {
+        const oldName = document.getElementById("oldBranch").value.trim();
+        const newName = document.getElementById("newBranch").value.trim();
+
+        fetch(`${BASE_URL}/branch/${oldName}?newBranchName=${newName}`, {
+            method: "PUT"
+        })
+        .then(res => res.text())
+        .then(msg => alert(msg))
+        .catch(err => alert("Error: " + err));
+    }
+
+    // DELETE → DELETE /branch/{name}
+    function deleteBranch() {
+        const branchName = document.getElementById("deleteBranch").value.trim();
+
+        fetch(`${BASE_URL}/branch/${branchName}`, {
+            method: "DELETE"
+        })
+        .then(res => res.text())
+        .then(msg => alert(msg))
+        .catch(err => alert("Error: " + err));
+    }
+</script>
+
+</body>
+</html>

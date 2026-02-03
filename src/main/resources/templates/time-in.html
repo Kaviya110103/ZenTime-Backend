@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SuperAdmin Dashboard | Client Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <style>
+    :root {
+      --primary: #4361ee;
+      --primary-light: #eef2ff;
+      --secondary: #3f37c9;
+      --success: #4cc9f0;
+      --danger: #f72585;
+      --warning: #f8961e;
+      --info: #4895ef;
+      --light: #f8f9fa;
+      --dark: #212529;
+      --gray: #6c757d;
+      --white: #ffffff;
+      --sidebar-width: 280px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+      --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+      --transition: all 0.3s ease;
+    }
+   
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f5f7fb;
+      color: #4a5568;
+    }
+   
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--white);
+      box-shadow: var(--shadow-md);
+      z-index: 100;
+      transition: var(--transition);
+    }
+   
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+   
+    .logo {
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+    }
+   
+    .logo i {
+      color: var(--primary);
+      margin-right: 0.75rem;
+      font-size: 1.5rem;
+    }
+   
+    .sidebar-menu {
+      padding: 1rem 0;
+      list-style: none;
+    }
+   
+    .sidebar-menu li a {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      color: var(--gray);
+      text-decoration: none;
+      transition: var(--transition);
+    }
+   
+    .sidebar-menu li a:hover {
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+   
+    .sidebar-menu li a i {
+      width: 24px;
+      margin-right: 0.75rem;
+      text-align: center;
+    }
+   
+    .sidebar-menu li.active a {
+      color: var(--primary);
+      background: var(--primary-light);
+      border-left: 3px solid var(--primary);
+    }
+   
+    /* Main Content */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      padding: 2rem;
+      transition: var(--transition);
+    }
+   
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+   
+    .page-title {
+      font-weight: 600;
+      color: var(--dark);
+      margin: 0;
+    }
+   
+    .breadcrumb {
+      background: transparent;
+      padding: 0;
+      margin: 0.5rem 0 0 0;
+    }
+   
+    /* Cards */
+    .card {
+      border: none;
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow-sm);
+      background: var(--white);
+      margin-bottom: 1.5rem;
+      transition: var(--transition);
+    }
+   
+    .card:hover {
+      box-shadow: var(--shadow-md);
+    }
+   
+    .card-header {
+      background: var(--white);
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      padding: 1.25rem 1.5rem;
+      border-radius: 0.75rem 0.75rem 0 0 !important;
+    }
+   
+    .card-title {
+      font-weight: 600;
+      margin: 0;
+      color: var(--dark);
+    }
+   
+    /* Buttons */
+    .btn {
+      border-radius: 0.5rem;
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      transition: var(--transition);
+    }
+   
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+   
+    .btn-primary:hover {
+      background: var(--secondary);
+      border-color: var(--secondary);
+    }
+   
+    .btn-outline-primary {
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+   
+    .btn-outline-primary:hover {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+   
+    /* Tables */
+    .table {
+      color: #4a5568;
+      margin: 0;
+    }
+   
+    .table th {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 600;
+      padding: 1rem;
+      border-top: none;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.5px;
+    }
+   
+    .table td {
+      padding: 1rem;
+      vertical-align: middle;
+      border-top: 1px solid rgba(0,0,0,0.05);
+    }
+   
+    /* Badges */
+    .badge {
+      font-weight: 500;
+      padding: 0.35em 0.65em;
+      border-radius: 0.5rem;
+      font-size: 0.75rem;
+    }
+   
+    .badge-success {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+    }
+   
+    .badge-danger {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+    }
+   
+    .badge-warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: #f59e0b;
+    }
+   
+    .badge-info {
+      background: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+    }
+   
+    /* Forms */
+    .form-control {
+      border-radius: 0.5rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid rgba(0,0,0,0.1);
+      transition: var(--transition);
+    }
+   
+    .form-control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 0.25rem rgba(67, 97, 238, 0.1);
+    }
+   
+    /* User Profile */
+    .user-profile {
+      display: flex;
+      align-items: center;
+    }
+   
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      margin-right: 0.75rem;
+      object-fit: cover;
+      background: var(--primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      font-weight: 600;
+    }
+   
+    /* Search */
+    .search-box {
+      position: relative;
+    }
+   
+    .search-box input {
+      padding-left: 2.5rem;
+      border-radius: 0.5rem;
+    }
+   
+    .search-box i {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gray);
+    }
+   
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1100;
+    }
+   
+    .toast {
+      border-radius: 0.5rem;
+      border: none;
+      box-shadow: var(--shadow-lg);
+    }
+   
+    /* Request Badge */
+    .request-badge {
+      position: relative;
+    }
+    
+    .request-count {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background-color: var(--danger);
+      color: white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: bold;
+    }
+   
+    /* Responsive */
+    @media (max-width: 992px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+      .main-content {
+        margin-left: 0;
+      }
+    }
+   
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+   
+    .fade-in {
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    /* Password strength indicator */
+    .password-strength {
+      height: 5px;
+      margin-top: 5px;
+      border-radius: 3px;
+      transition: all 0.3s ease;
+    }
+
+    .strength-weak {
+      background-color: #ff4d4d;
+      width: 33%;
+    }
+
+    .strength-medium {
+      background-color: #ffa64d;
+      width: 66%;
+    }
+
+    .strength-strong {
+      background-color: #00cc66;
+      width: 100%;
+    }
+
+    .password-feedback {
+      font-size: 0.8rem;
+      margin-top: 5px;
+    }
+    
+    /* Password toggle button */
+    .password-toggle-btn {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <i class="fas fa-shield-alt"></i>
+        <span>AdminPro</span>
+      </div>
+    </div>
+    <ul class="sidebar-menu">
+      <li class="active"><a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+      <li><a href="#"><i class="fas fa-users"></i> Clients</a></li>
+      <li>
+        <a href="#" id="requestsMenuItem" data-bs-toggle="modal" data-bs-target="#requestsModal">
+          <i class="fas fa-user-cog"></i> Client Requests
+          <span class="request-badge">
+            <span id="requestCount" class="request-count">0</span>
+          </span>
+        </a>
+      </li>
+      <li><a href="#"><i class="fas fa-cog"></i> Settings</a></li>
+      <li> <a href="#" data-bs-toggle="modal" data-bs-target="#analyticsModal"><i class="fas fa-chart-pie"></i>Analytics</a></li>
+      <li><a href="#"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+    </ul>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <div class="container-fluid">
+      <!-- Page Header -->
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Client Management</h1>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+              <li class="breadcrumb-item"><a href="#">Dashboard</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Clients</li>
+            </ol>
+          </nav>
+        </div>
+        <div class="d-flex gap-2">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input id="searchInput" type="text" class="form-control" placeholder="Search clients..." style="width: 200px;">
+          </div>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addClientModal">
+            <i class="fas fa-plus me-2"></i>Add Client
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <div class="card fade-in">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 class="card-title text-muted mb-1">Total Clients</h6>
+                  <h3 class="mb-0" id="statsClientCount">0</h3>
+                </div>
+                <div class="bg-primary-light p-3 rounded">
+                  <i class="fas fa-users fa-2x text-primary"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card fade-in">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 class="card-title text-muted mb-1">Pending Requests</h6>
+                  <h3 class="mb-0" id="statsRequestCount">0</h3>
+                </div>
+                <div class="bg-warning-light p-3 rounded" style="background: rgba(245, 158, 11, 0.1);">
+                  <i class="fas fa-clock fa-2x text-warning"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card fade-in">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 class="card-title text-muted mb-1">Total Employees</h6>
+                  <h3 class="mb-0" id="statsEmployeeCount">0</h3>
+                </div>
+                <div class="bg-success-light p-3 rounded" style="background: rgba(16, 185, 129, 0.1);">
+                  <i class="fas fa-user-check fa-2x text-success"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Login Panel -->
+      <div class="card fade-in">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Quick Client Login</h5>
+        </div>
+        <div class="card-body">
+          <div class="row align-items-center">
+            <div class="col-md-8">
+              <div class="d-flex gap-2">
+                <input id="loginUsername" placeholder="Username" class="form-control">
+                <div class="input-group">
+                  <input id="loginPassword" placeholder="Password" type="password" class="form-control">
+                  <button class="btn btn-outline-secondary password-toggle-btn" type="button" id="toggleLoginPassword">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4 text-end">
+              <button id="loginBtn" class="btn btn-success w-100">
+                <i class="fas fa-sign-in-alt me-2"></i>Login
+              </button>
+            </div>
+          </div>
+          <div id="loginStatus" class="mt-3"></div>
+        </div>
+      </div>
+
+      <!-- Clients Table -->
+      <div class="card fade-in">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">Client Directory</h5>
+          <div class="text-muted small">Total: <span id="clientCount">0</span> clients</div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover" id="clientsTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Client</th>
+                  <th>Company</th>
+                  <th>Contact</th>
+                  <th>Registered</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+          <div id="noClients" class="text-center py-5" style="display:none;">
+            <i class="fas fa-users-slash fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No clients found</h5>
+            <p class="text-muted">Add your first client to get started</p>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addClientModal">
+              <i class="fas fa-plus me-2"></i>Add Client
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client Requests Modal -->
+  <div class="modal fade" id="requestsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Client Requests <span class="badge bg-warning ms-2" id="modalRequestCount">0</span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table class="table table-hover" id="requestsTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Client Name</th>
+                  <th>Company</th>
+                  <th>Company Code</th>
+                  <th>Contact</th>
+                  <th>Employees</th>
+                  <th>Request Date</th>
+                  <th>Working Hours</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+          <div id="noRequests" class="text-center py-5" style="display:none;">
+            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No pending requests</h5>
+            <p class="text-muted">All client requests have been processed</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approve Client Modal -->
+  <div class="modal fade" id="approveClientModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Approve Client Request</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-4">
+            <h6>Client Information</h6>
+            <div class="card bg-light">
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <p class="mb-1"><strong>Name:</strong> <span id="approveClientName"></span></p>
+                    <p class="mb-1"><strong>Company:</strong> <span id="approveCompanyName"></span></p>
+                    <p class="mb-1"><strong>Code:</strong> <span id="approveCompanyCode"></span></p>
+                  </div>
+                  <div class="col-md-6">
+                    <p class="mb-1"><strong>Email:</strong> <span id="approveEmail"></span></p>
+                    <p class="mb-1"><strong>Phone:</strong> <span id="approvePhone"></span></p>
+                    <p class="mb-1"><strong>Employees:</strong> <span id="approveEmployees"></span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <h6>Create Login Credentials</h6>
+          <form id="approveClientForm">
+            <div class="mb-3">
+              <label class="form-label">Username <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-user-tag"></i></span>
+                <input type="text" class="form-control" id="approveUsername" required>
+              </div>
+              <div class="form-text">Username must be unique</div>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">Password <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                <input type="password" class="form-control" id="approvePassword" required>
+                <button class="btn btn-outline-secondary password-toggle-btn" type="button" id="toggleApprovePassword">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-outline-secondary" type="button" id="generatePasswordBtn">
+                  <i class="fas fa-sync-alt"></i>
+                </button>
+              </div>
+              <div class="password-strength" id="passwordStrength"></div>
+              <div class="password-feedback" id="passwordFeedback"></div>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">Confirm Password <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                <input type="password" class="form-control" id="approveConfirmPassword" required>
+                <button class="btn btn-outline-secondary password-toggle-btn" type="button" id="toggleApproveConfirmPassword">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </div>
+              <div class="form-text text-danger" id="passwordMatchError" style="display: none;">
+                Passwords do not match
+              </div>
+            </div>
+            
+            <div id="approveFormAlert" class="alert d-none" role="alert"></div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="confirmApproveBtn" type="button" class="btn btn-primary">
+            <i class="fas fa-check me-2"></i>Create Client Account
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analytics Modal -->
+  <div class="modal fade" id="analyticsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content border-0 rounded-3 shadow">
+        <div class="modal-header">
+          <h5 class="modal-title">Analytics Overview</h5>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row text-center mb-4">
+            <div class="col">
+              <h4 id="totalClients">0</h4>
+              <small>Total Clients</small>
+            </div>
+            <div class="col">
+              <h4 id="totalEmployees">0</h4>
+              <small>Total Employees</small>
+            </div>
+            <div class="col">
+              <h4 id="totalRequests">0</h4>
+              <small>Pending Requests</small>
+            </div>
+          </div>
+          <canvas id="analyticsChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Client Modal -->
+  <div class="modal fade" id="addClientModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add New Client</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="clientForm">
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label">Client Name <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-user"></i></span>
+                  <input type="text" class="form-control" id="clientName" required value="Alice Johnson">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Company <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-building"></i></span>
+                  <input type="text" class="form-control" id="companyName" required value="Acme Corp">
+                </div>
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label">Mobile <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-phone"></i></span>
+                  <input type="tel" class="form-control" id="mobileNo" required value="9876543210">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Email <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                  <input type="email" class="form-control" id="email" required value="alice@example.com">
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Address <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-map-marker-alt"></i></span>
+                <textarea class="form-control" id="address" rows="2" required>123 Main Street, Bangalore, India</textarea>
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <label class="form-label">Employees <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-users"></i></span>
+                  <input type="number" min="1" class="form-control" id="employeeCount" required value="42">
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Registered <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                  <input type="date" class="form-control" id="registeredDate" required value="2025-08-01">
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Working Hours <span class="text-danger">*</span></label>
+                <div class="d-flex gap-1 align-items-center">
+                  <input type="time" class="form-control" id="workingFrom" required value="09:00">
+                  <span class="text-muted">to</span>
+                  <input type="time" class="form-control" id="workingTo" required value="18:00">
+                </div>
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label">Username <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-user-tag"></i></span>
+                  <input type="text" class="form-control" id="username" required value="acme_admin">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Password <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                  <input type="password" class="form-control" id="password" required value="securePass123">
+                  <button class="btn btn-outline-secondary password-toggle-btn" type="button" id="togglePassword">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Profile Photo</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-camera"></i></span>
+                <input class="form-control" type="file" id="clientPhoto">
+              </div>
+            </div>
+            <div id="formAlert" class="alert d-none" role="alert"></div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="saveClientBtn" type="button" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Save Client
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    const baseUrl = "http://192.168.1.18:8080";
+    let clientsCache = [];
+    let requestsCache = [];
+    let currentRequestId = null;
+
+    // Function to toggle password visibility
+    function togglePasswordVisibility(inputId, buttonId) {
+      const passwordInput = document.getElementById(inputId);
+      const toggleButton = document.getElementById(buttonId);
+      
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleButton.innerHTML = '<i class="fas fa-eye-slash"></i>';
+      } else {
+        passwordInput.type = 'password';
+        toggleButton.innerHTML = '<i class="fas fa-eye"></i>';
+      }
+    }
+
+    function showToast(message, isError = false) {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `
+        <div class="toast align-items-center text-white ${isError ? 'bg-danger' : 'bg-primary'} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body d-flex align-items-center">
+              <i class="fas ${isError ? 'fa-exclamation-circle' : 'fa-check-circle'} me-2"></i>
+              ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        </div>`;
+      const toastEl = wrapper.firstElementChild;
+      document.getElementById('toastContainer').appendChild(toastEl);
+      const toast = new bootstrap.Toast(toastEl, { delay: 4000 });
+      toast.show();
+      toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    }
+
+    async function fetchClients(filter = '') {
+      try {
+        const res = await fetch(`${baseUrl}/api/clients`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        const data = await res.json();
+        clientsCache = data;
+        renderClients(data, filter);
+        updateStats();
+        document.getElementById('clientCount').textContent = data.length;
+      } catch (e) {
+        console.error(e);
+        showToast('Failed to load clients', true);
+        document.getElementById('noClients').style.display = 'block';
+      }
+    }
+
+    async function fetchRequests() {
+      try {
+        const res = await fetch(`${baseUrl}/api/clients-requests`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        const data = await res.json();
+        requestsCache = data;
+        updateRequestCount();
+        updateStats();
+        return data;
+      } catch (e) {
+        console.error('Failed to load requests:', e);
+        showToast('Failed to load client requests', true);
+        return [];
+      }
+    }
+
+    function updateRequestCount() {
+      const count = requestsCache.length;
+      document.getElementById('requestCount').textContent = count;
+      document.getElementById('modalRequestCount').textContent = count;
+      document.getElementById('statsRequestCount').textContent = count;
+      
+      // Show/hide the badge based on count
+      const badge = document.querySelector('.request-badge .request-count');
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+
+    function updateStats() {
+      const totalClients = clientsCache.length;
+      const totalEmployees = clientsCache.reduce((sum, c) => sum + (c.employeeCount || 0), 0);
+      const totalRequests = requestsCache.length;
+      
+      document.getElementById('statsClientCount').textContent = totalClients;
+      document.getElementById('statsEmployeeCount').textContent = totalEmployees;
+      document.getElementById('statsRequestCount').textContent = totalRequests;
+    }
+
+    function renderClients(list, filter = '') {
+      const tbody = document.querySelector('#clientsTable tbody');
+      tbody.innerHTML = '';
+     
+      const filtered = list.filter(c => {
+        if (!filter) return true;
+        const term = filter.toLowerCase();
+        return (c.clientName || '').toLowerCase().includes(term)
+          || (c.companyName || '').toLowerCase().includes(term)
+          || (c.emailAddress || '').toLowerCase().includes(term)
+          || (c.username || '').toLowerCase().includes(term);
+      });
+     
+      if (filtered.length === 0) {
+        document.getElementById('noClients').style.display = 'block';
+        document.getElementById('clientCount').textContent = '0';
+      } else {
+        document.getElementById('noClients').style.display = 'none';
+        document.getElementById('clientCount').textContent = filtered.length;
+      }
+     
+      filtered.forEach((c, i) => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => viewClient(c.id);
+       
+        // Get initials for avatar
+        const initials = c.clientName ? c.clientName.split(' ').map(n => n[0]).join('') : 'C';
+       
+        tr.innerHTML = `
+          <td class="text-muted">${i + 1}</td>
+          <td>
+            <div class="user-profile">
+              <div class="user-avatar">${initials}</div>
+              <div>
+                <div class="fw-semibold">${c.clientName || 'N/A'}</div>
+                <small class="text-muted">${c.username || ''}</small>
+              </div>
+            </div>
+          </td>
+          <td>${c.companyName || 'N/A'}</td>
+          <td>
+            <div>${c.emailAddress || 'N/A'}</div>
+            <small class="text-muted">${c.mobileNumber || ''}</small>
+          </td>
+          <td>
+            <div>${c.registeredDate || 'N/A'}</div>
+            <small class="text-muted">${c.employeeCount || '0'} employees</small>
+          </td>
+          <td>
+            ${c.employeeCount && c.employeeCount > 0
+              ? '<span class="badge badge-success"><i class="fas fa-check-circle me-1"></i> Active</span>'
+              : '<span class="badge badge-danger"><i class="fas fa-times-circle me-1"></i> Inactive</span>'}
+          </td>
+          <td>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary" data-id="${c.id}" onclick="event.stopPropagation();editClient(${c.id})">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" data-id="${c.id}" onclick="event.stopPropagation();deleteClient(${c.id})">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderRequests() {
+      const tbody = document.querySelector('#requestsTable tbody');
+      tbody.innerHTML = '';
+      
+      if (requestsCache.length === 0) {
+        document.getElementById('noRequests').style.display = 'block';
+      } else {
+        document.getElementById('noRequests').style.display = 'none';
+      }
+      
+      requestsCache.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        
+        tr.innerHTML = `
+          <td class="text-muted">${i + 1}</td>
+          <td class="fw-semibold">${r.clientName || 'N/A'}</td>
+          <td>${r.companyName || 'N/A'}</td>
+          <td><span class="badge bg-light text-dark">${r.companyCode || 'N/A'}</span></td>
+          <td>
+            <div>${r.emailAddress || 'N/A'}</div>
+            <small class="text-muted">${r.mobileNumber || ''}</small>
+          </td>
+          <td><span class="badge bg-info">${r.employeeCount || '0'}</span></td>
+          <td>${r.registeredDate || 'N/A'}</td>
+          <td><span class="badge bg-secondary">${r.workingHours || 'N/A'}</span></td>
+          <td>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-success" onclick="openApproveModal(${r.id})">
+                <i class="fas fa-check"></i> Approve
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="rejectRequest(${r.id})">
+                <i class="fas fa-times"></i> Reject
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function openApproveModal(requestId) {
+      const request = requestsCache.find(r => r.id === requestId);
+      if (!request) return;
+      
+      currentRequestId = requestId;
+      
+      // Populate the modal with request data
+      document.getElementById('approveClientName').textContent = request.clientName || 'N/A';
+      document.getElementById('approveCompanyName').textContent = request.companyName || 'N/A';
+      document.getElementById('approveCompanyCode').textContent = request.companyCode || 'N/A';
+      document.getElementById('approveEmail').textContent = request.emailAddress || 'N/A';
+      document.getElementById('approvePhone').textContent = request.mobileNumber || 'N/A';
+      document.getElementById('approveEmployees').textContent = request.employeeCount || '0';
+      
+      // Set default username (company code or generated from company name)
+      const defaultUsername = request.companyCode || 
+        (request.companyName ? request.companyName.toLowerCase().replace(/\s+/g, '_') + '_admin' : '');
+      document.getElementById('approveUsername').value = defaultUsername;
+      
+      // Generate a strong password by default
+      generateStrongPassword();
+      
+      // Show the modal
+      const modal = new bootstrap.Modal(document.getElementById('approveClientModal'));
+      modal.show();
+    }
+
+    function generateStrongPassword() {
+      const length = 12;
+      const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~`|}{[]:;?><,./-=";
+      let password = "";
+      
+      // Ensure at least one of each required character type
+      password += getRandomChar("abcdefghijklmnopqrstuvwxyz");
+      password += getRandomChar("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+      password += getRandomChar("012345678
+      password += getRandomChar("!@#$%^&*()_+~`|}{[]:;?><,./-=");
+      
+      // Fill the rest randomly
+      for (let i = 4; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+      }
+      
+      // Shuffle the password
+      password = password.split('').sort(() => 0.5 - Math.random()).join('');
+      
+      document.getElementById('approvePassword').value = password;
+      document.getElementById('approveConfirmPassword').value = password;
+      checkPasswordStrength(password);
+    }
+
+    function getRandomChar(charSet) {
+      return charSet.charAt(Math.floor(Math.random() * charSet.length));
+    }
+
+    function checkPasswordStrength(password) {
+      const strengthBar = document.getElementById('passwordStrength');
+      const feedback = document.getElementById('passwordFeedback');
+      
+      // Reset
+      strengthBar.className = 'password-strength';
+      feedback.textContent = '';
+      
+      if (!password) return;
+      
+      // Check password strength
+      let strength = 0;
+      let feedbackText = '';
+      
+      if (password.length >= 8) strength++;
+      if (password.match(/([a-z].*[A-Z])|([A-Z].*[a-z])/)) strength++;
+      if (password.match(/([0-9])/)) strength++;
+      if (password.match(/([!,@,#,$,%,^,&,*,?,_,~])/)) strength++;
+      
+      if (strength === 0) {
+        feedbackText = 'Very weak password';
+      } else if (strength === 1) {
+        strengthBar.className = 'password-strength strength-weak';
+        feedbackText = 'Weak password';
+      } else if (strength === 2) {
+        strengthBar.className = 'password-strength strength-medium';
+        feedbackText = 'Medium strength password';
+      } else if (strength === 3) {
+        strengthBar.className = 'password-strength strength-strong';
+        feedbackText = 'Strong password';
+      } else {
+        strengthBar.className = 'password-strength strength-strong';
+        feedbackText = 'Very strong password';
+      }
+      
+      feedback.textContent = feedbackText;
+    }
+
+    function validatePasswordMatch() {
+      const password = document.getElementById('approvePassword').value;
+      const confirmPassword = document.getElementById('approveConfirmPassword').value;
+      const errorElement = document.getElementById('passwordMatchError');
+      
+      if (password && confirmPassword && password !== confirmPassword) {
+        errorElement.style.display = 'block';
+        return false;
+      } else {
+        errorElement.style.display = 'none';
+        return true;
+      }
+    }
+
+    async function approveRequest() {
+      const username = document.getElementById('approveUsername').value.trim();
+      const password = document.getElementById('approvePassword').value;
+      const confirmPassword = document.getElementById('approveConfirmPassword').value;
+      
+      // Validate inputs
+      if (!username || !password || !confirmPassword) {
+        showToast('Please fill all fields', true);
+        return;
+      }
+      
+      if (!validatePasswordMatch()) {
+        showToast('Passwords do not match', true);
+        return;
+      }
+      
+      try {
+        // First get the request details
+        const resp = await fetch(`${baseUrl}/api/clients-requests/${currentRequestId}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        
+        if (!resp.ok) throw new Error(`Failed to fetch request: ${resp.status}`);
+        
+        const request = await resp.json();
+        
+        // Create client from request
+        const clientResp = await fetch(`${baseUrl}/api/clients`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            clientName: request.clientName,
+            companyName: request.companyName,
+            mobileNumber: request.mobileNumber,
+            emailAddress: request.emailAddress,
+            address: request.address,
+            employeeCount: request.employeeCount,
+            registeredDate: request.registeredDate,
+            workingHours: request.workingHours,
+            username: username,
+            password: password
+          })
+        });
+        
+        if (clientResp.ok) {
+          // Delete the request
+          await fetch(`${baseUrl}/api/clients-requests/${currentRequestId}`, {
+            method: 'DELETE'
+          });
+          
+          showToast('Client approved and created successfully');
+          fetchClients();
+          fetchRequests();
+          
+          // Close the modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('approveClientModal'));
+          modal.hide();
+          
+          // Refresh the requests modal if it's open
+          if (document.getElementById('requestsModal').classList.contains('show')) {
+            renderRequests();
+          }
+        } else {
+          showToast('Failed to create client: ' + clientResp.status, true);
+        }
+      } catch (e) {
+        showToast('Approval error: ' + e.message, true);
+        console.error(e);
+      }
+    }
+
+    async function rejectRequest(id) {
+      if (!confirm('Are you sure you want to reject this request?')) return;
+      try {
+        const resp = await fetch(`${baseUrl}/api/clients-requests/${id}`, {
+          method: 'DELETE'
+        });
+        if (resp.ok || resp.status === 204) {
+          showToast('Request rejected successfully');
+          fetchRequests();
+          
+          // Refresh the requests modal if it's open
+          if (document.getElementById('requestsModal').classList.contains('show')) {
+            renderRequests();
+          }
+        } else {
+          showToast('Rejection failed: ' + resp.status, true);
+        }
+      } catch (e) {
+        showToast('Rejection error: ' + e.message, true);
+      }
+    }
+
+    async function createClient(payload) {
+      try {
+        const resp = await fetch(`${baseUrl}/api/clients`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        const body = await resp.json();
+        if (resp.ok) {
+          showToast('Client created successfully');
+          fetchClients();
+          return body;
+        } else {
+          showToast('Create failed: ' + (body?.message || resp.status), true);
+          return null;
+        }
+      } catch (e) {
+        showToast('Create error: ' + e.message, true);
+        console.error(e);
+        return null;
+      }
+    }
+
+    async function loginClient(username, password) {
+      try {
+        const resp = await fetch(`${baseUrl}/api/clients/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const body = await resp.json();
+        const container = document.getElementById('loginStatus');
+
+        if (resp.ok) {
+          container.innerHTML = `
+            <div class="alert alert-success d-flex align-items-center mb-0">
+              <i class="fas fa-check-circle me-2"></i>
+              Logged in as <strong>${body.clientName}</strong> (${body.username})
+            </div>`;
+
+          // Redirect after 1 second
+          setTimeout(() => {
+            window.location.href = "http://localhost:3000";
+          }, 1000);
+
+          return body;
+        } else {
+          container.innerHTML = `
+            <div class="alert alert-danger d-flex align-items-center mb-0">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              Login failed (status ${resp.status})
+            </div>`;
+          return null;
+        }
+      } catch (e) {
+        document.getElementById('loginStatus').innerHTML = `
+          <div class="alert alert-danger d-flex align-items-center mb-0">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Login error: ${e.message}
+          </div>`;
+        console.error(e);
+        return null;
+      }
+    }
+
+    async function deleteClient(id) {
+      if (!confirm('Are you sure you want to delete this client?')) return;
+      try {
+        const resp = await fetch(`${baseUrl}/api/clients/${id}`, {
+          method: 'DELETE'
+        });
+        if (resp.ok || resp.status === 204) {
+          showToast('Client deleted successfully');
+          fetchClients();
+        } else {
+          showToast('Delete failed: ' + resp.status, true);
+        }
+      } catch (e) {
+        showToast('Delete error: ' + e.message, true);
+      }
+    }
+
+    function viewClient(id) {
+      const c = clientsCache.find(c => c.id === id);
+      if (!c) return;
+     
+      // Create a modal to show client details
+      const modal = new bootstrap.Modal(document.createElement('div'));
+      modal._element.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Client Details</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="text-center mb-4">
+                <div class="user-avatar mx-auto" style="width:80px;height:80px;font-size:2rem;">
+                  ${c.clientName ? c.clientName.split(' ').map(n => n[0]).join('') : 'C'}
+                </div>
+                <h4 class="mt-3 mb-1">${c.clientName || 'N/A'}</h4>
+                <div class="text-muted">${c.companyName || ''}</div>
+              </div>
+             
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Username</small>
+                    <div>${c.username || 'N/A'}</div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Status</small>
+                    <div>
+                      ${c.employeeCount && c.employeeCount > 0
+                        ? '<span class="badge badge-success">Active</span>'
+                        : '<span class="badge badge-danger">Inactive</span>'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+             
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Email</small>
+                    <div>${c.emailAddress || 'N/A'}</div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Mobile</small>
+                    <div>${c.mobileNumber || 'N/A'}</div>
+                  </div>
+                </div>
+              </div>
+             
+              <div class="mb-2">
+                <small class="text-muted">Address</small>
+                <div>${c.address || 'N/A'}</div>
+              </div>
+             
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Employees</small>
+                    <div>${c.employeeCount || '0'}</div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-2">
+                    <small class="text-muted">Registered</small>
+                    <div>${c.registeredDate || 'N/A'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal._element);
+      modal.show();
+     
+      // Clean up after modal is hidden
+      modal._element.addEventListener('hidden.bs.modal', () => {
+        document.body.removeChild(modal._element);
+      });
+    }
+
+    function editClient(id) {
+      const c = clientsCache.find(c => c.id === id);
+      if (!c) return;
+     
+      // Populate modal for editing
+      document.getElementById('clientName').value = c.clientName;
+      document.getElementById('companyName').value = c.companyName;
+      document.getElementById('mobileNo').value = c.mobileNumber;
+      document.getElementById('email').value = c.emailAddress;
+      document.getElementById('address').value = c.address;
+      document.getElementById('employeeCount').value = c.employeeCount;
+      document.getElementById('registeredDate').value = c.registeredDate;
+      document.getElementById('username').value = c.username;
+     
+      // Set working hours if available
+      if (c.workingHours) {
+        const [from, to] = c.workingHours.split('-');
+        document.getElementById('workingFrom').value = from;
+        document.getElementById('workingTo').value = to;
+      }
+     
+      // Change modal title and save button text
+      document.querySelector('#addClientModal .modal-title').textContent = 'Edit Client';
+      document.getElementById('saveClientBtn').innerHTML = '<i class="fas fa-save me-2"></i>Update Client';
+     
+      // Store the ID for update
+      document.getElementById('saveClientBtn').dataset.id = id;
+     
+      const modal = new bootstrap.Modal(document.getElementById('addClientModal'));
+      modal.show();
+    }
+
+    document.getElementById('saveClientBtn').addEventListener('click', async () => {
+      const clientName = document.getElementById('clientName').value.trim();
+      const companyName = document.getElementById('companyName').value.trim();
+      const mobileNumber = document.getElementById('mobileNo').value.trim();
+      const emailAddress = document.getElementById('email').value.trim();
+      const address = document.getElementById('address').value.trim();
+      const employeeCount = parseInt(document.getElementById('employeeCount').value, 10);
+      const registeredDate = document.getElementById('registeredDate').value;
+      const workingFrom = document.getElementById('workingFrom').value;
+      const workingTo = document.getElementById('workingTo').value;
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const clientId = document.getElementById('saveClientBtn').dataset.id;
+
+      if (!clientName || !companyName || !mobileNumber || !emailAddress || !address || !employeeCount || !registeredDate || !username || !password) {
+        showToast('Please fill all required fields', true);
+        return;
+      }
+
+      const workingHours = `${workingFrom}-${workingTo}`;
+      const payload = {
+        clientName,
+        companyName,
+        mobileNumber,
+        emailAddress,
+        address,
+        employeeCount,
+        registeredDate,
+        workingHours,
+        username,
+        password
+      };
+
+      if (clientId) {
+        // Update existing client
+        try {
+          const resp = await fetch(`${baseUrl}/api/clients/${clientId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+         
+          if (resp.ok) {
+            showToast('Client updated successfully');
+            fetchClients();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addClientModal'));
+            modal.hide();
+          } else {
+            showToast('Update failed: ' + resp.status, true);
+          }
+        } catch (e) {
+          showToast('Update error: ' + e.message, true);
+        }
+      } else {
+        // Create new client
+        await createClient(payload);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addClientModal'));
+        modal.hide();
+      }
+    });
+
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      const u = document.getElementById('loginUsername').value.trim();
+      const p = document.getElementById('loginPassword').value;
+      if (!u || !p) {
+        showToast('Enter login credentials', true);
+        return;
+      }
+      await loginClient(u, p);
+    });
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      renderClients(clientsCache, e.target.value);
+    });
+
+    // Password strength checker
+    document.getElementById('approvePassword').addEventListener('input', (e) => {
+      checkPasswordStrength(e.target.value);
+      validatePasswordMatch();
+    });
+
+    document.getElementById('approveConfirmPassword').addEventListener('input', validatePasswordMatch);
+
+    // Generate password button
+    document.getElementById('generatePasswordBtn').addEventListener('click', generateStrongPassword);
+
+    // Approve button
+    document.getElementById('confirmApproveBtn').addEventListener('click', approveRequest);
+
+    // Reset modal when hidden
+    document.getElementById('addClientModal').addEventListener('hidden.bs.modal', () => {
+      document.querySelector('#addClientModal .modal-title').textContent = 'Add New Client';
+      document.getElementById('saveClientBtn').innerHTML = '<i class="fas fa-save me-2"></i>Save Client';
+      delete document.getElementById('saveClientBtn').dataset.id;
+    });
+
+    // Reset approve modal when hidden
+    document.getElementById('approveClientModal').addEventListener('hidden.bs.modal', () => {
+      document.getElementById('approveClientForm').reset();
+      document.getElementById('passwordStrength').className = 'password-strength';
+      document.getElementById('passwordFeedback').textContent = '';
+      document.getElementById('passwordMatchError').style.display = 'none';
+      currentRequestId = null;
+    });
+
+    // Load requests when requests modal is shown
+    document.getElementById('requestsModal').addEventListener('show.bs.modal', async () => {
+      await fetchRequests();
+      renderRequests();
+    });
+
+    // Analytics modal
+    async function loadAnalytics() {
+      try {
+        const clients = clientsCache;
+        const requests = requestsCache;
+
+        const totalClients = clients.length;
+        const totalEmployees = clients.reduce((sum, c) => sum + (c.employeeCount || 0), 0);
+        const totalRequests = requests.length;
+
+        document.getElementById('totalClients').textContent = totalClients;
+        document.getElementById('totalEmployees').textContent = totalEmployees;
+        document.getElementById('totalRequests').textContent = totalRequests;
+
+        const ctx = document.getElementById('analyticsChart').getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: ['Clients', 'Employees', 'Pending Requests'],
+            datasets: [{
+              label: 'Counts',
+              data: [totalClients, totalEmployees, totalRequests],
+              backgroundColor: ['#4B7BEC', '#2ECC71', '#F59E0B']
+            }]
+          },
+          options: { responsive: true }
+        });
+      } catch (err) {
+        console.error("Error loading analytics:", err);
+      }
+    }
+
+    // Load data when modal is shown
+    document.getElementById('analyticsModal').addEventListener('shown.bs.modal', loadAnalytics);
+
+    // Add event listeners for password toggle buttons
+    document.getElementById('togglePassword').addEventListener('click', () => {
+      togglePasswordVisibility('password', 'togglePassword');
+    });
+    
+    document.getElementById('toggleApprovePassword').addEventListener('click', () => {
+      togglePasswordVisibility('approvePassword', 'toggleApprovePassword');
+    });
+    
+    document.getElementById('toggleApproveConfirmPassword').addEventListener('click', () => {
+      togglePasswordVisibility('approveConfirmPassword', 'toggleApproveConfirmPassword');
+    });
+    
+    document.getElementById('toggleLoginPassword').addEventListener('click', () => {
+      togglePasswordVisibility('loginPassword', 'toggleLoginPassword');
+    });
+
+    // Initial load
+    fetchClients();
+    fetchRequests();
+  </script>
+</body>
+</html>
