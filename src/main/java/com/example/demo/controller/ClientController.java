@@ -120,18 +120,25 @@ public class ClientController {
         emailDetails.setSubject("Client Account Created");
 
         String message = String.format(
-                "Dear %s,\n\n" +
-                        "Your client account has been created.\n\n" +
-                        "Login Credentials:\n" +
-                        "Username: %s\n" +
-                        "Password: %s\n\n" +
-                        "Your Company Code: %s\n\n" +
-                        "Please change your password after first login.\n\n" +
-                        "Regards,\nAdmin",
+                """
+                Dear %s,
+
+                Your client account has been created.
+
+                Login Credentials:
+                Username: %s
+                Password: %s
+
+                Your Company Code: %s
+
+                Please change your password after first login.
+
+                Regards,
+                Admin""",
                 saved.getClientName(),
                 saved.getUsername(),
-                saved.getCompanyCode(),
-                plainPassword
+                plainPassword,
+                saved.getCompanyCode()
         );
         emailDetails.setMessage(message);
         emailService.sendEmail(emailDetails);

@@ -165,6 +165,10 @@ public List<AttendanceRecord> getAttendanceByStatusAndMonth(
         @RequestParam int month,
         @RequestParam int year) {
     String monthPattern = String.format("/%02d/%d", month, year);
+    // FIXED: Handle "All" status - return all records for the month
+    if (attendanceStatus == null || attendanceStatus.isEmpty() || attendanceStatus.equalsIgnoreCase("All")) {
+        return attendanceRecordRepository.findByMonthPattern(monthPattern);
+    }
     return attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
 }
 
@@ -175,6 +179,10 @@ public List<AttendanceRecord> getAttendanceByMonthStatusBranch(
         @RequestParam String attendanceStatus,
         @RequestParam String branch) {
     String monthPattern = String.format("/%02d/%d", month, year);
+    // FIXED: Handle "All" status
+    if (attendanceStatus == null || attendanceStatus.isEmpty() || attendanceStatus.equalsIgnoreCase("All")) {
+        return attendanceRecordRepository.findByMonthPatternAndBranch(monthPattern, branch);
+    }
     return attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
 }
 
@@ -218,6 +226,10 @@ public List<AttendanceRecord> getAttendanceByDate(
 public List<AttendanceRecord> getAttendanceByDateAndStatusAll(
         @RequestParam String date,
         @RequestParam String attendanceStatus) {
+    // FIXED: Handle "All" status properly
+    if (attendanceStatus == null || attendanceStatus.isEmpty() || attendanceStatus.equalsIgnoreCase("All")) {
+        return attendanceRecordRepository.findByDate(date);
+    }
     return attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
 }
 // Get all ABSENT employees for a particular date
@@ -226,6 +238,79 @@ public List<AttendanceRecord> getAbsentByDate(
         @RequestParam String date) {
     return attendanceRecordRepository
             .findByDateAndAttendanceStatus(date, "Absent");
+}
+
+// FIXED: Comprehensive filter endpoint for attendance records
+@GetMapping("/filter-comprehensive")
+public java.util.Map<String, Object> filterAttendanceRecordsComprehensive(
+        @RequestParam(required = false) Long employeeId,
+        @RequestParam(required = false) String branch,
+        @RequestParam(required = false) String attendanceStatus,
+        @RequestParam(required = false) String date,
+        @RequestParam(required = false) int month,
+        @RequestParam(required = false) int year) {
+    
+    List<AttendanceRecord> filteredRecords = attendanceRecordRepository.findAll();
+    
+    // Filter by employee
+    if (employeeId != null && employeeId > 0) {
+        filteredRecords = filteredRecords.stream()
+            .filter(r -> r.getEmployee() != null && r.getEmployee().getId().equals(employeeId))
+            .toList();
+    }
+    
+    // Filter by branch
+    if (branch != null && !branch.isEmpty() && !branch.equalsIgnoreCase("All")) {
+        filteredRecords = filteredRecords.stream()
+            .filter(r -> r.getEmployee() != null && branch.equals(r.getEmployee().getBranch()))
+            .toList();
+    }
+    
+    // Filter by attendance status (FIXED: Handle "All" status)
+    if (attendanceStatus != null && !attendanceStatus.isEmpty() && !attendanceStatus.equalsIgnoreCase("All")) {
+        filteredRecords = filteredRecords.stream()
+            .filter(r -> r.getAttendanceStatus() != null && 
+                    r.getAttendanceStatus().equalsIgnoreCase(attendanceStatus))
+            .toList();
+    }
+    
+    // Filter by date
+    if (date != null && !date.isEmpty()) {
+        filteredRecords = filteredRecords.stream()
+            .filter(r -> r.getDate() != null && r.getDate().equals(date))
+            .toList();
+    }
+    
+    // Filter by month and year
+    if (month > 0 && year > 0) {
+        String monthPattern = String.format("/%02d/%d", month, year);
+        filteredRecords = filteredRecords.stream()
+            .filter(r -> r.getDate() != null && r.getDate().contains(monthPattern))
+            .toList();
+    }
+    
+    // Calculate statistics
+    long presentCount = filteredRecords.stream()
+        .filter(r -> r.getAttendanceStatus() != null && 
+                r.getAttendanceStatus().equalsIgnoreCase("Present"))
+        .count();
+    
+    long absentCount = filteredRecords.stream()
+        .filter(r -> r.getAttendanceStatus() != null && 
+                r.getAttendanceStatus().equalsIgnoreCase("Absent"))
+        .count();
+    
+    long totalRecords = filteredRecords.size();
+    
+    java.util.Map<String, Object> response = new java.util.HashMap<>();
+    response.put("records", filteredRecords);
+    response.put("totalRecords", totalRecords);
+    response.put("presentCount", presentCount);
+    response.put("absentCount", absentCount);
+    response.put("status", attendanceStatus != null ? attendanceStatus : "All");
+    response.put("branch", branch != null ? branch : "All");
+    
+    return response;
 }
 
 

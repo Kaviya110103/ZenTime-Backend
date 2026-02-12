@@ -73,6 +73,14 @@ List<AttendanceRecord> findByAttendanceStatusAndMonthPattern(@Param("attendanceS
 @Query("SELECT a FROM AttendanceRecord a WHERE a.date LIKE %:monthPattern AND a.attendanceStatus = :attendanceStatus AND a.employee.branch = :branch")
 List<AttendanceRecord> findByMonthStatusBranch(@Param("monthPattern") String monthPattern, @Param("attendanceStatus") String attendanceStatus, @Param("branch") String branch);
 
+// FIXED: Add method to get all records for a month pattern (for "All" status filter)
+@Query("SELECT a FROM AttendanceRecord a WHERE a.date LIKE %:monthPattern")
+List<AttendanceRecord> findByMonthPattern(@Param("monthPattern") String monthPattern);
+
+// FIXED: Add method to get all records for a month pattern and branch (for "All" status filter)
+@Query("SELECT a FROM AttendanceRecord a WHERE a.date LIKE %:monthPattern AND a.employee.branch = :branch")
+List<AttendanceRecord> findByMonthPatternAndBranch(@Param("monthPattern") String monthPattern, @Param("branch") String branch);
+
 
     /** One record for one employee on one date (dd/MM/yyyy) */
     Optional<AttendanceRecord> findByEmployee_IdAndDate(Long employeeId, String date);
