@@ -107,8 +107,8 @@ public class EmployeeController {
             Admin, IIE""",
             createdEmployee.getFirstName(),
             createdEmployee.getUsername(),
-            createdEmployee.getCompanyCode(),
-            plainPassword // unhashed version
+            plainPassword ,// unhashed version
+            createdEmployee.getCompanyCode()
         );
 
         emailDetails.setMessage(message);
@@ -277,7 +277,7 @@ public class EmployeeController {
         logger.info("🔐 Login attempt - Username: {}", username);
 
         Optional<Employee> employeeOptional = employeeRepository.findByUsername(username);
-
+ 
         if (employeeOptional.isPresent()) {
             Employee employee = employeeOptional.get();
             if (passwordEncoder.matches(rawPassword, employee.getPassword())) {
