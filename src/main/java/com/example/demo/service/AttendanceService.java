@@ -40,7 +40,6 @@ public List<AttendanceRecord> getTodayAbsentRecords() {
 
 
 public List<AttendanceRecord> getMonthlyAttendanceForEmployee(Long employeeId) {
-    // TODO Auto-generated method stub
     throw new UnsupportedOperationException("Unimplemented method 'getMonthlyAttendanceForEmployee'");
 }
 

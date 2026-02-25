@@ -13,6 +13,7 @@ import com.example.demo.MODELS.Employee;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Optional<Employee> findByUsername(String username);
+    Optional<Employee> findByEmployeeCode(String employeeCode);
 
      Optional<Employee> findByUsernameAndPassword(String username, String password);
 
@@ -20,5 +21,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
         //  List<Employee> findByBranch(String branchName);
 List<Employee> findByGuestNameIsNotNullAndGuestStartDateBefore(LocalDateTime cutoffTime);
 List<Employee> findByClientId(Long clientId);
+List<Employee> findByCompanyCode(String companyCode);
 
 }
+
+

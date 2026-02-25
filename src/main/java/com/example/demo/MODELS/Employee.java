@@ -6,6 +6,8 @@ package com.example.demo.MODELS;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -96,8 +98,17 @@ public class Employee {
     @Column(name = "week_off")
     private String weekOff;
 
+    @Column(name = "shift_start_time")
+    private String shiftStartTime;
+
+    @Column(name = "shift_end_time")
+    private String shiftEndTime;
+
 @Column(name = "company_code")
     private String companyCode;
+
+    @Column(name = "employee_code", unique = true)
+    private String employeeCode;
 
     // Getters and Setters
 @Column(name = "guest_name")
@@ -141,6 +152,13 @@ private LocalDateTime guestStartDate;
 
     public void setCompanyCode(String companyCode) {
         this.companyCode = companyCode;
+    }
+    public String getEmployeeCode() {
+        return employeeCode;
+    }
+
+    public void setEmployeeCode(String employeeCode) {
+        this.employeeCode = employeeCode;
     }
 
 
@@ -360,6 +378,22 @@ private LocalDateTime guestStartDate;
         this.weekOff = weekOff;
     }
 
+    public String getShiftStartTime() {
+        return shiftStartTime;
+    }
+
+    public void setShiftStartTime(String shiftStartTime) {
+        this.shiftStartTime = shiftStartTime;
+    }
+
+    public String getShiftEndTime() {
+        return shiftEndTime;
+    }
+
+    public void setShiftEndTime(String shiftEndTime) {
+        this.shiftEndTime = shiftEndTime;
+    }
+
 
     public void setId(Long id) {
         this.id = id;
@@ -372,6 +406,7 @@ private LocalDateTime guestStartDate;
 
 
       // Optional: mappedBy for bi-directional mapping
+    @JsonIgnore
     @OneToMany(mappedBy = "employee", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AttendanceRecord> attendanceRecords;
 
@@ -383,3 +418,9 @@ private LocalDateTime guestStartDate;
         this.attendanceRecords = attendanceRecords;
     }
 }
+
+
+
+
+
+

@@ -702,14 +702,12 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails() {
     String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
 
-    // Define cutoff time (10:10 AM)
-    LocalTime cutoffTime = LocalTime.of(10, 10);
-
     List<Map<String, Object>> result = records.stream()
         .filter(record -> {
-            if (record.getTimeIn() != null) {
+            if (record.getTimeIn() != null && record.getEmployee() != null) {
                 LocalTime timeIn = record.getTimeIn().toLocalTime();
-                return timeIn.isAfter(cutoffTime); // Only after 10:10 AM
+                LocalTime cutoffTime = resolveLateCutoff(record.getEmployee());
+                return timeIn.isAfter(cutoffTime);
             }
             return false;
         })
@@ -741,13 +739,11 @@ public ResponseEntity<List<Map<String, Object>>> getLateArrivalsByDate(@RequestP
 
     List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(date);
 
-    // Define cutoff time as 10:10 AM
-    LocalTime cutoffTime = LocalTime.of(10, 10);
-
     List<Map<String, Object>> result = records.stream()
         .filter(record -> {
-            if (record.getTimeIn() != null) {
+            if (record.getTimeIn() != null && record.getEmployee() != null) {
                 LocalTime timeIn = record.getTimeIn().toLocalTime();
+                LocalTime cutoffTime = resolveLateCutoff(record.getEmployee());
                 return timeIn.isAfter(cutoffTime);
             }
             return false;
@@ -788,19 +784,25 @@ public Map<String, Object> getDashboardSummary() {
     // Today stats
     long todayPresent = todayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
     long todayAbsent = todayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
-    long todayLate = todayRecords.stream().filter(a -> 
-        a.getTimeIn() != null &&
-        a.getTimeIn().isAfter(LocalDateTime.of(LocalDate.now(), LocalTime.of(10, 15)))
-    ).count();
+    long todayLate = todayRecords.stream().filter(a -> {
+        if (a.getTimeIn() == null || a.getEmployee() == null) {
+            return false;
+        }
+        LocalTime cutoffTime = resolveLateCutoff(a.getEmployee()).plusMinutes(5);
+        return a.getTimeIn().toLocalTime().isAfter(cutoffTime);
+    }).count();
     long todayOnTime = todayPresent - todayLate;
 
     // Yesterday stats
     long yesterdayPresent = yesterdayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
     long yesterdayAbsent = yesterdayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
-    long yesterdayLate = yesterdayRecords.stream().filter(a -> 
-        a.getTimeIn() != null &&
-        a.getTimeIn().isAfter(LocalDateTime.of(LocalDate.now().minusDays(1), LocalTime.of(10, 15)))
-    ).count();
+    long yesterdayLate = yesterdayRecords.stream().filter(a -> {
+        if (a.getTimeIn() == null || a.getEmployee() == null) {
+            return false;
+        }
+        LocalTime cutoffTime = resolveLateCutoff(a.getEmployee()).plusMinutes(5);
+        return a.getTimeIn().toLocalTime().isAfter(cutoffTime);
+    }).count();
     long yesterdayOnTime = yesterdayPresent - yesterdayLate;
 
     // Percentage comparisons (today - yesterday) / yesterday * 100
@@ -825,6 +827,21 @@ private double calculatePercentageChange(long oldValue, long newValue) {
     if (oldValue == 0 && newValue == 0) return 0.0;
     if (oldValue == 0) return 100.0; // from 0 to something = 100% increase
     return ((double) (newValue - oldValue) / oldValue) * 100;
+}
+
+private LocalTime resolveShiftStart(Employee employee) {
+    if (employee != null && employee.getShiftStartTime() != null && !employee.getShiftStartTime().isBlank()) {
+        try {
+            return LocalTime.parse(employee.getShiftStartTime().trim());
+        } catch (DateTimeParseException ignored) {
+            // Fallback to default on bad data.
+        }
+    }
+    return LocalTime.of(10, 0);
+}
+
+private LocalTime resolveLateCutoff(Employee employee) {
+    return resolveShiftStart(employee).plusMinutes(10);
 }
 
 

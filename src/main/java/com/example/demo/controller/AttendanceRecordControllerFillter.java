@@ -1,7 +1,5 @@
 package com.example.demo.controller;
 
-import java.time.Duration;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.repo.AttendanceRecordRepository;
+import com.example.demo.service.EmployeeService;
 
 @RestController
 @RequestMapping("/api/attendance-records")
@@ -26,6 +25,9 @@ public class AttendanceRecordControllerFillter {
 
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
+
+    @Autowired
+    private EmployeeService employeeService;
 
     // 1. Get all attendance details
     @GetMapping("/all")
@@ -96,14 +98,8 @@ public ResponseEntity<?> calculateAndUpdateMissedTimes(@RequestParam Long attend
     AttendanceRecord record = optional.get();
 
     if (record.getTimeIn() != null && record.getTimeOut() != null) {
-        // Calculate missedTimes in minutes (example: difference between timeIn and timeOut)
-        long minutesWorked = java.time.Duration.between(record.getTimeIn(), record.getTimeOut()).toMinutes();
-        // Example: expected working minutes per day is 8 hours = 480 minutes
-        int expectedMinutes = 480;
-        int missedTimes = (int) Math.max(0, expectedMinutes - minutesWorked);
-        record.setMissedTimes(missedTimes);
-        attendanceRecordRepository.save(record);
-        return ResponseEntity.ok("Missed times calculated and updated: " + missedTimes + " minutes.");
+        employeeService.updateMissedTimes(record);
+        return ResponseEntity.ok("Missed times calculated and updated: " + record.getMissedTimes() + " minutes.");
     } else {
         return ResponseEntity.badRequest().body("Both timeIn and timeOut must be set to calculate missed times.");
     }
@@ -115,31 +111,10 @@ public ResponseEntity<?> calculateMissedTimesForAll() {
 
     for (AttendanceRecord record : records) {
         if (record.getTimeIn() != null && record.getTimeOut() != null) {
-            // Expected times
-            LocalTime expectedIn = LocalTime.of(10, 0);  // 10:00 AM
-            LocalTime expectedOut = LocalTime.of(19, 0); // 7:00 PM
-
-            LocalTime actualIn = record.getTimeIn().toLocalTime();
-            LocalTime actualOut = record.getTimeOut().toLocalTime();
-
-            // Minutes late after 10:00
-            long lateMinutes = 0;
-            if (actualIn.isAfter(expectedIn)) {
-                lateMinutes = Duration.between(expectedIn, actualIn).toMinutes();
-            }
-
-            // Minutes early before 19:00
-            long earlyMinutes = 0;
-            if (actualOut.isBefore(expectedOut)) {
-                earlyMinutes = Duration.between(actualOut, expectedOut).toMinutes();
-            }
-
-            int missedTimes = (int) (lateMinutes + earlyMinutes);
-            record.setMissedTimes(missedTimes);
+            employeeService.updateMissedTimes(record);
             updatedCount++;
         }
     }
-    attendanceRecordRepository.saveAll(records);
     return ResponseEntity.ok("Missed times calculated and updated for " + updatedCount + " records.");
 }
 

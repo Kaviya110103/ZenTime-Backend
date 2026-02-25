@@ -2,6 +2,7 @@ package com.example.demo.controller;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,8 +27,14 @@ import com.example.demo.service.EmailService;
 import jakarta.validation.Valid;
 
 @RestController
-@CrossOrigin(origins = "https://superadmin.zentime.co.in, http://127.0.0.1:5500") // Allow frontend to access
-
+@CrossOrigin(origins = {
+        "https://superadmin.zentime.co.in",
+        "http://127.0.0.1:5500",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+})
 @RequestMapping(value = "/api/clients", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
 public class ClientController {
 
@@ -43,15 +50,14 @@ public class ClientController {
         this.emailService = emailService;
     }
 
-    // DTOs
-
     public static class ClientLoginRequest {
         private String username;
         private String password;
+
         public String getUsername() { return username; }
-        public void setUsername(String u) { this.username = u; }
+        public void setUsername(String username) { this.username = username; }
         public String getPassword() { return password; }
-        public void setPassword(String p) { this.password = p; }
+        public void setPassword(String password) { this.password = password; }
     }
 
     public static class ClientResponse {
@@ -83,7 +89,6 @@ public class ClientController {
             return r;
         }
 
-        // getters (if needed)
         public Long getId() { return id; }
         public String getClientName() { return clientName; }
         public String getCompanyName() { return companyName; }
@@ -97,7 +102,6 @@ public class ClientController {
         public String getUsername() { return username; }
     }
 
-    // Create client
     @PostMapping
     public ResponseEntity<ClientResponse> createClient(@Valid @RequestBody Client client) {
         if (client.getUsername() == null || client.getUsername().isBlank()) {
@@ -113,7 +117,6 @@ public class ClientController {
 
         Client saved = clientService.createClient(client);
 
-        // send welcome email
         EmailDetails emailDetails = new EmailDetails();
         emailDetails.setSender("wingrootechnologies@gmail.com");
         emailDetails.setReceiver(saved.getEmailAddress());
@@ -130,8 +133,8 @@ public class ClientController {
                         "Regards,\nAdmin",
                 saved.getClientName(),
                 saved.getUsername(),
-                saved.getCompanyCode(),
-                plainPassword
+                plainPassword,
+                saved.getCompanyCode()
         );
         emailDetails.setMessage(message);
         emailService.sendEmail(emailDetails);
@@ -140,33 +143,28 @@ public class ClientController {
                 .body(ClientResponse.fromEntity(saved));
     }
 
-    // Login
-   @PostMapping(path = "/login", 
-    consumes = MediaType.APPLICATION_JSON_VALUE, 
-    produces = MediaType.APPLICATION_JSON_VALUE)
-public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req) {
+    @PostMapping(path = "/login",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req) {
+        if (req.getUsername() == null || req.getUsername().isBlank()
+                || req.getPassword() == null || req.getPassword().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
 
-    // Hardcoded username & password check
-    if ("admin".equals(req.getUsername()) && "admin".equals(req.getPassword())) {
+        Optional<Client> clientOpt = clientService.findByUsername(req.getUsername());
+        if (clientOpt.isEmpty()) {
+            return ResponseEntity.status(401).build();
+        }
 
-        // Fake response (no DB used)
-        ClientResponse r = new ClientResponse();
-        // set only required fields
-        r.id = 0L;
-        r.username = "admin";
-        r.clientName = "Admin User";
-        r.companyName = "System Admin";
-        r.companyCode = "ADMIN001";
+        Client client = clientOpt.get();
+        if (!passwordEncoder.matches(req.getPassword(), client.getPassword())) {
+            return ResponseEntity.status(401).build();
+        }
 
-        return ResponseEntity.ok(r);
+        return ResponseEntity.ok(ClientResponse.fromEntity(client));
     }
 
-    // If incorrect
-    return ResponseEntity.status(401).build();
-}
-
-
-    // Get all
     @GetMapping(path = "", consumes = MediaType.ALL_VALUE)
     public ResponseEntity<List<ClientResponse>> getAll() {
         List<ClientResponse> list = clientService.listAll().stream()
@@ -175,8 +173,7 @@ public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req)
         return ResponseEntity.ok(list);
     }
 
-    // Get by ID
-    @GetMapping(path = "/{id}", consumes = MediaType.ALL_VALUE)
+    @GetMapping(path = "/{id:\\d+}", consumes = MediaType.ALL_VALUE)
     public ResponseEntity<ClientResponse> getById(@PathVariable Long id) {
         return clientService.getById(id)
                 .map(ClientResponse::fromEntity)
@@ -184,8 +181,7 @@ public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Update
-    @PutMapping("/{id}")
+    @PutMapping("/{id:\\d+}")
     public ResponseEntity<ClientResponse> updateClient(@PathVariable Long id, @Valid @RequestBody Client client) {
         try {
             Client updated = clientService.update(id, client);
@@ -195,37 +191,31 @@ public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req)
         }
     }
 
-    // Delete
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{id:\\d+}")
     public ResponseEntity<Void> deleteClient(@PathVariable Long id) {
         clientService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
-
-       @PostMapping("/branch")
+    @PostMapping("/branch")
     public ResponseEntity<String> createBranches(@RequestBody BranchNamesRequest request) {
-        // logic handled elsewhere
         return ResponseEntity.ok("Branches created successfully");
     }
 
-     @GetMapping("/branch/all")
+    @GetMapping("/branch/all")
     public ResponseEntity<List<String>> getAllBranches() {
-        // logic handled elsewhere
         return ResponseEntity.ok(List.of());
     }
-      @PutMapping("/branch/{oldBranchName}")
+
+    @PutMapping("/branch/{oldBranchName}")
     public ResponseEntity<String> updateBranch(
             @PathVariable String oldBranchName,
             @RequestParam String newBranchName) {
-
-        // logic handled elsewhere
         return ResponseEntity.ok("Branch updated successfully");
     }
 
-      @DeleteMapping("/branch/{branchName}")
+    @DeleteMapping("/branch/{branchName}")
     public ResponseEntity<String> deleteBranch(@PathVariable String branchName) {
-        // logic handled elsewhere
         return ResponseEntity.ok("Branch deleted successfully");
     }
 }

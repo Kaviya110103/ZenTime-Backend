@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.example.demo.MODELS.EmailDetails;
 import com.example.demo.MODELS.Employee;
@@ -62,10 +64,23 @@ public class EmployeeController {
     }
 
     
-      @PostMapping
-    public ResponseEntity<Employee> createEmployee( @RequestBody Employee employee) {
+          @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Employee> createEmployee(@RequestBody Employee employee) {
         if (employee.getClientId() == null) {
             return ResponseEntity.badRequest().build(); // must supply clientId
+        }
+
+        if (employee.getCompanyCode() != null) {
+            employee.setCompanyCode(employee.getCompanyCode().trim().toUpperCase());
+        }
+
+        if (employee.getEmployeeCode() != null && !employee.getEmployeeCode().isBlank()) {
+            String normalizedCode = employee.getEmployeeCode().trim().toUpperCase();
+            Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(normalizedCode);
+            if (existingCodeOwner.isPresent()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(null);
+            }
+            employee.setEmployeeCode(normalizedCode);
         }
 
         // Step 1: Plain password (could be pre-set or generated)
@@ -80,7 +95,7 @@ public class EmployeeController {
         String encryptedPassword = passwordEncoder.encode(plainPassword);
         employee.setPassword(encryptedPassword);
 
-        // Step 3: Save (service will assign clientEmployeeId)
+        // Step 3: Save (service assigns default employeeCode if blank)
         Employee createdEmployee = employeeService.saveEmployee(employee);
 
         // Step 4: Send email with plain password
@@ -107,7 +122,7 @@ public class EmployeeController {
             Admin, IIE""",
             createdEmployee.getFirstName(),
             createdEmployee.getUsername(),
-            plainPassword ,// unhashed version
+            plainPassword, // unhashed version
             createdEmployee.getCompanyCode()
         );
 
@@ -117,6 +132,23 @@ public class EmployeeController {
 
         return ResponseEntity.ok(createdEmployee);
     }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> createEmployeeWithImage(
+            @ModelAttribute Employee employee,
+            @RequestParam(value = "file", required = false) MultipartFile file) {
+        try {
+            if (file != null && !file.isEmpty()) {
+                String imageUrl = saveImageAndBuildUrl(file);
+                employee.setProfileImage(imageUrl);
+            }
+            return createEmployee(employee);
+        } catch (IOException e) {
+            logger.error("Failed to save image while creating employee", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Image upload failed");
+        }
+    }
+
     @GetMapping("/{id}/profile-image")
     public ResponseEntity<String> getProfileImage(@PathVariable Long id) {
         Optional<Employee> optionalEmployee = employeeRepository.findById(id);
@@ -181,7 +213,7 @@ public class EmployeeController {
         }
     }
 
-    @PutMapping("/update/{id}")
+        @PutMapping("/update/{id}")
     public ResponseEntity<Object> updateEmployee(
             @PathVariable Long id,
             @RequestBody Employee updatedEmployeeData) {
@@ -210,9 +242,64 @@ public class EmployeeController {
         existingEmployee.setResetToken(updatedEmployeeData.getResetToken());
         existingEmployee.setSalary(updatedEmployeeData.getSalary());
         existingEmployee.setWeekOff(updatedEmployeeData.getWeekOff());
+        existingEmployee.setShiftStartTime(updatedEmployeeData.getShiftStartTime());
+        existingEmployee.setShiftEndTime(updatedEmployeeData.getShiftEndTime());
+
+        String companyCode = updatedEmployeeData.getCompanyCode();
+        if (companyCode == null || companyCode.isBlank()) {
+            companyCode = existingEmployee.getCompanyCode();
+        }
+        if (companyCode == null || companyCode.isBlank()) {
+            return ResponseEntity.badRequest().body("companyCode is required");
+        }
+        companyCode = companyCode.trim().toUpperCase();
+        existingEmployee.setCompanyCode(companyCode);
+
+        String requestedCode = updatedEmployeeData.getEmployeeCode();
+        String finalEmployeeCode;
+        if (requestedCode == null || requestedCode.isBlank()) {
+            finalEmployeeCode = companyCode + ".EMP" + existingEmployee.getId();
+        } else {
+            finalEmployeeCode = requestedCode.trim().toUpperCase();
+        }
+
+        Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(finalEmployeeCode);
+        if (existingCodeOwner.isPresent() && !existingCodeOwner.get().getId().equals(id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("employeeCode already exists");
+        }
+
+        existingEmployee.setEmployeeCode(finalEmployeeCode);
 
         employeeRepository.save(existingEmployee);
         return ResponseEntity.ok(existingEmployee);
+    }
+
+    @PutMapping("/{id}/employee-code")
+    public ResponseEntity<Object> updateEmployeeCode(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> payload) {
+
+        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+        if (optionalEmployee.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found with ID: " + id);
+        }
+
+        String newEmployeeCode = payload.get("employeeCode");
+        if (newEmployeeCode == null || newEmployeeCode.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("employeeCode is required");
+        }
+
+        String trimmedCode = newEmployeeCode.trim();
+        Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(trimmedCode);
+        if (existingCodeOwner.isPresent() && !existingCodeOwner.get().getId().equals(id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("employeeCode already exists");
+        }
+
+        Employee employee = optionalEmployee.get();
+        employee.setEmployeeCode(trimmedCode);
+        employeeRepository.save(employee);
+
+        return ResponseEntity.ok(employee);
     }
 
     // Delete Employee by ID
@@ -303,13 +390,7 @@ public class EmployeeController {
         }
 
         try {
-            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-            Path uploadPath = Paths.get("uploads");
-            Files.createDirectories(uploadPath);
-            Path filePath = uploadPath.resolve(fileName);
-            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-            String imageUrl = "http://192.168.1.4:8080/api/employees/image/" + fileName;
+            String imageUrl = saveImageAndBuildUrl(file);
 
             Employee employee = optionalEmployee.get();
             employee.setProfileImage(imageUrl);
@@ -319,6 +400,21 @@ public class EmployeeController {
         } catch (IOException e) {
             return ResponseEntity.status(500).body("Upload failed");
         }
+    }
+
+    private String saveImageAndBuildUrl(MultipartFile file) throws IOException {
+        String originalName = file.getOriginalFilename() == null ? "image" : file.getOriginalFilename();
+        String fileName = UUID.randomUUID() + "_" + originalName.replace(" ", "_");
+
+        Path uploadPath = Paths.get("uploads");
+        Files.createDirectories(uploadPath);
+        Path filePath = uploadPath.resolve(fileName);
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/employees/image/")
+                .path(fileName)
+                .toUriString();
     }
 
     // Serve image
@@ -376,3 +472,7 @@ public class EmployeeController {
         return ResponseEntity.ok("Employee Controller is working!");
     }
 }
+
+
+
+
