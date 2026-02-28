@@ -15,7 +15,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.repo.AttendanceRecordRepository;
+import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.EmployeeService;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/attendance-records")
@@ -28,6 +32,9 @@ public class AttendanceRecordControllerFillter {
 
     @Autowired
     private EmployeeService employeeService;
+
+    @Autowired
+    private AttendanceMetricsService attendanceMetricsService;
 
     // 1. Get all attendance details
     @GetMapping("/all")
@@ -48,7 +55,46 @@ public class AttendanceRecordControllerFillter {
             @RequestParam int month,
             @RequestParam int year) {
         String monthPattern = String.format("/%02d/%d", month, year);
-        return attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employeeId, monthPattern);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employeeId, monthPattern);
+
+        // Keep missedTimes aligned with the shared monthly calculation logic.
+        boolean changed = false;
+        for (AttendanceRecord record : records) {
+            int recalculated = attendanceMetricsService.calculateDailyMissedMinutes(record);
+            Integer current = record.getMissedTimes();
+            if (current == null || current != recalculated) {
+                record.setMissedtimes(recalculated);
+                changed = true;
+            }
+        }
+        if (changed) {
+            attendanceRecordRepository.saveAll(records);
+        }
+
+        return records;
+    }
+
+    @GetMapping("/by-employee-month-metrics")
+    public ResponseEntity<?> getAttendanceMetricsByEmployeeIdAndMonth(
+            @RequestParam Long employeeId,
+            @RequestParam int month,
+            @RequestParam int year) {
+        AttendanceMetricsService.MonthlyMetrics metrics =
+                attendanceMetricsService.calculateMonthlyMetrics(employeeId, month, year);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("employeeId", employeeId);
+        response.put("month", month);
+        response.put("year", year);
+        response.put("absentCount", metrics.absentCount());
+        response.put("totalLateMinutes", metrics.monthlyLateMinutes());
+        response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
+        response.put("totalMissedTimes", metrics.totalMissedMinutes());
+        response.put("approvedPermissionCount", metrics.approvedPermissionCount());
+        response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
+        response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
+        response.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
+        return ResponseEntity.ok(response);
     }
 
     // 4. Get attendance details by date and employee ID

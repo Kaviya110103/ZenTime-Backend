@@ -1,9 +1,6 @@
 package com.example.demo.service;
 
-import java.time.Duration;
-import java.time.LocalTime;
 import java.time.YearMonth;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +21,9 @@ public class EmployeeService {
 
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
+
+    @Autowired
+    private AttendanceMetricsService attendanceMetricsService;
 
     // Create or Update
     public Employee saveEmployee(Employee employee) {
@@ -48,7 +48,7 @@ public class EmployeeService {
         if (companyCode == null || companyCode.isBlank()) {
             throw new IllegalArgumentException("companyCode is required to create employee code");
         }
-        return companyCode.trim().toUpperCase();
+        return companyCode.trim().toLowerCase();
     }
 
     private String normalizeOptionalEmployeeCode(String employeeCode) {
@@ -71,6 +71,10 @@ public class EmployeeService {
         return employeeRepository.findById(id);
     }
 
+    public Optional<Employee> getEmployeeByIdAndClientId(Long id, Long clientId) {
+        return employeeRepository.findByIdAndClientId(id, clientId);
+    }
+
     // Get by Username
     public Optional<Employee> getEmployeeByUsername(String username) {
         return employeeRepository.findByUsername(username);
@@ -81,61 +85,19 @@ public class EmployeeService {
         return employeeRepository.findAll();
     }
 
+    public List<Employee> getEmployeesByClientId(Long clientId) {
+        return employeeRepository.findByClientId(clientId);
+    }
+
     // Delete by ID
     public void deleteEmployeeById(Long id) {
         employeeRepository.deleteById(id);
     }
 
     public void updateMissedTimes(AttendanceRecord record) {
-        LocalTime allowedStart = resolveShiftStart(record);
-        LocalTime allowedEnd = resolveShiftEnd(record);
-
-        int missedMinutes = 0;
-
-        if (record.getTimeIn() != null) {
-            LocalTime timeIn = record.getTimeIn().toLocalTime();
-            if (timeIn.isAfter(allowedStart)) {
-                missedMinutes += Duration.between(allowedStart, timeIn).toMinutes();
-            }
-        }
-
-        if (record.getTimeOut() != null) {
-            LocalTime timeOut = record.getTimeOut().toLocalTime();
-            if (timeOut.isBefore(allowedEnd)) {
-                missedMinutes += Duration.between(timeOut, allowedEnd).toMinutes();
-            }
-        }
-
+        int missedMinutes = attendanceMetricsService.calculateDailyMissedMinutes(record);
         record.setMissedtimes(missedMinutes);
         attendanceRecordRepository.save(record);
-    }
-
-    private LocalTime resolveShiftStart(AttendanceRecord record) {
-        if (record != null && record.getEmployee() != null) {
-            String shiftStart = record.getEmployee().getShiftStartTime();
-            if (shiftStart != null && !shiftStart.isBlank()) {
-                try {
-                    return LocalTime.parse(shiftStart.trim());
-                } catch (DateTimeParseException ignored) {
-                    // Fallback to current default if bad data exists.
-                }
-            }
-        }
-        return LocalTime.of(10, 0);
-    }
-
-    private LocalTime resolveShiftEnd(AttendanceRecord record) {
-        if (record != null && record.getEmployee() != null) {
-            String shiftEnd = record.getEmployee().getShiftEndTime();
-            if (shiftEnd != null && !shiftEnd.isBlank()) {
-                try {
-                    return LocalTime.parse(shiftEnd.trim());
-                } catch (DateTimeParseException ignored) {
-                    // Fallback to current default if bad data exists.
-                }
-            }
-        }
-        return LocalTime.of(19, 0);
     }
 
     public EmployeeNetPayment calculateNetPayment(Employee employee, int month, int year, int paidLeaveDayCount,
@@ -147,7 +109,17 @@ public class EmployeeService {
 
         int totalWorkingDays = totalDaysInMonth - totalPaidLeaveCount;
 
-        double netSalary = ((double) presentDays / totalWorkingDays) * employee.getSalary();
+        int safeTotalWorkingDays = Math.max(totalWorkingDays, 1);
+        double baseNetSalary = ((double) presentDays / safeTotalWorkingDays) * employee.getSalary();
+        AttendanceMetricsService.MonthlyMetrics metrics =
+                attendanceMetricsService.calculateMonthlyMetrics(employee.getId(), month, year);
+        int shiftMinutesPerDay = attendanceMetricsService.resolveShiftDurationMinutes(employee);
+        double perDaySalary = employee.getSalary() / totalDaysInMonth;
+        double missedTimeDeduction = (perDaySalary / shiftMinutesPerDay) * metrics.totalMissedMinutes();
+        double netSalary = baseNetSalary - missedTimeDeduction;
+        if (netSalary < 0) {
+            netSalary = 0;
+        }
 
         EmployeeNetPayment payment = new EmployeeNetPayment();
         payment.setEmployee(employee);

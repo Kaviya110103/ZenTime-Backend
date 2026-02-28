@@ -5,6 +5,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Column;
 
 @Entity
 @Table(name = "locations")
@@ -28,6 +29,9 @@ public class Location {
 
     /** Radius in metres */
     private Integer radius;
+
+    @Column(name = "client_id")
+    private Long clientId;
     
     
 
@@ -50,4 +54,7 @@ public class Location {
 
     public Integer getRadius()        { return radius; }
     public void setRadius(Integer radius) { this.radius = radius; }
+
+    public Long getClientId() { return clientId; }
+    public void setClientId(Long clientId) { this.clientId = clientId; }
 }

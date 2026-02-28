@@ -13,9 +13,11 @@ import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.service.AttendanceMetricsService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,6 +37,9 @@ public class LeavePermissionController {
 
     @Autowired
     private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private AttendanceMetricsService attendanceMetricsService;
 
 
     // ✅ 1. POST Leave Permission
@@ -62,7 +67,11 @@ public ResponseEntity<String> createLeave(@RequestParam Long employeeId,
 
     // ✅ 2. GET all leave permissions
     @GetMapping("/all")
-    public List<LeavePermission> getAllLeaves() {
+    public List<LeavePermission> getAllLeaves(
+            @RequestParam(value = "clientId", required = false) Long clientId) {
+        if (clientId != null) {
+            return leavePermissionRepository.findByEmployee_ClientId(clientId);
+        }
         return leavePermissionRepository.findAll();
     }
 
@@ -80,11 +89,50 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
                                                 @RequestParam String status) {
     Optional<LeavePermission> leaveOpt = leavePermissionRepository.findById(leaveId);
     if (leaveOpt.isEmpty()) {
-        return ResponseEntity.badRequest().body("Leave ID not found.");
+        return ResponseEntity.status(404).body("Leave ID not found.");
     }
 
     LeavePermission leave = leaveOpt.get();
     String newStatus = status.toLowerCase();
+    if (!"approved".equals(newStatus) && !"rejected".equals(newStatus) && !"pending".equals(newStatus)) {
+        return ResponseEntity.badRequest().body("Invalid status.");
+    }
+
+    if ("approved".equals(newStatus) && "Permission".equalsIgnoreCase(leave.getLeaveType())) {
+        int permissionMinutes = attendanceMetricsService.calculatePermissionDurationMinutes(leave);
+        if (permissionMinutes <= 0) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid permission time range. Please provide valid startTime and endTime.");
+        }
+
+        LocalDate permissionDate = resolvePermissionMonthDate(leave);
+        if (permissionDate == null) {
+            return ResponseEntity.badRequest().body("Invalid permission date.");
+        }
+
+        AttendanceMetricsService.PermissionUsage usage =
+                attendanceMetricsService.getApprovedPermissionUsage(
+                        leave.getEmployee().getId(),
+                        permissionDate.getMonthValue(),
+                        permissionDate.getYear(),
+                        leave.getId());
+
+        int finalCount = usage.approvedPermissionCount() + 1;
+        int finalMinutes = usage.approvedPermissionMinutes() + permissionMinutes;
+        if (finalCount > AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH) {
+            return ResponseEntity.badRequest().body(
+                    "Approval limit exceeded: maximum "
+                            + AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH
+                            + " approved permissions per month.");
+        }
+        if (finalMinutes > AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH) {
+            return ResponseEntity.badRequest().body(
+                    "Approval limit exceeded: maximum "
+                            + AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH
+                            + " approved permission minutes per month.");
+        }
+    }
+
     leave.setStatus(newStatus);
     leavePermissionRepository.save(leave);
 
@@ -128,8 +176,12 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
     }
 
 @GetMapping("/status/{status}/count")
-public ResponseEntity<Long> countLeavesByStatus(@PathVariable String status) {
-    long cnt = leavePermissionRepository.countByStatusIgnoreCase(status);
+public ResponseEntity<Long> countLeavesByStatus(
+        @PathVariable String status,
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    long cnt = clientId == null
+            ? leavePermissionRepository.countByStatusIgnoreCase(status)
+            : leavePermissionRepository.countByStatusIgnoreCaseAndEmployee_ClientId(status, clientId);
     return ResponseEntity.ok(cnt);
 }
 
@@ -165,6 +217,22 @@ public ResponseEntity<Long> countLeavesByStatus(@PathVariable String status) {
 
         leavePermissionRepository.save(leave);
         return ResponseEntity.ok("Leave request submitted successfully.");
+    }
+
+    private LocalDate resolvePermissionMonthDate(LeavePermission leave) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String dateRaw = leave.getDate();
+        if (dateRaw == null || dateRaw.isBlank()) {
+            dateRaw = leave.getStartDate();
+        }
+        if (dateRaw == null || dateRaw.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(dateRaw, formatter);
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 }
 

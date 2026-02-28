@@ -806,7 +806,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <script>
-    const baseUrl = "http://192.168.1.18:8080";
+    const baseUrl = "http://192.168.1.22:8080";
     let clientsCache = [];
     let requestsCache = [];
     let currentRequestId = null;
@@ -1045,7 +1045,7 @@
       // Ensure at least one of each required character type
       password += getRandomChar("abcdefghijklmnopqrstuvwxyz");
       password += getRandomChar("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-      password += getRandomChar("012345678
+      password += getRandomChar("012345678");
       password += getRandomChar("!@#$%^&*()_+~`|}{[]:;?><,./-=");
       
       // Fill the rest randomly

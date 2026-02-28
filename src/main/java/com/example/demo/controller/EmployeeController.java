@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.sql.DataSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -27,6 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,6 +45,7 @@ import com.example.demo.repo.EmployeeNetPaymentRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.service.EmailService;
 import com.example.demo.service.EmployeeService;
+import com.example.demo.tenant.TenantContext;
 
 @RestController
 @RequestMapping("/api/employees")   // http://localhost:8080
@@ -51,15 +57,18 @@ public class EmployeeController {
     private final EmployeeService employeeService;
     private final EmployeeNetPaymentRepository employeeNetPaymentRepository;
     private final EmployeeRepository employeeRepository;
+    private final JdbcTemplate masterJdbcTemplate;
     private final EmailService emailService;
 
     public EmployeeController(PasswordEncoder passwordEncoder, EmployeeService employeeService,
             EmployeeNetPaymentRepository employeeNetPaymentRepository, EmployeeRepository employeeRepository,
+            @org.springframework.beans.factory.annotation.Qualifier("masterDataSource") DataSource masterDataSource,
             EmailService emailService) {
         this.passwordEncoder = passwordEncoder;
         this.employeeService = employeeService;
         this.employeeNetPaymentRepository = employeeNetPaymentRepository;
         this.employeeRepository = employeeRepository;
+        this.masterJdbcTemplate = new JdbcTemplate(masterDataSource);
         this.emailService = emailService;
     }
 
@@ -70,17 +79,26 @@ public class EmployeeController {
             return ResponseEntity.badRequest().build(); // must supply clientId
         }
 
-        if (employee.getCompanyCode() != null) {
-            employee.setCompanyCode(employee.getCompanyCode().trim().toUpperCase());
+        String companyCode;
+        try {
+            companyCode = resolveCompanyCodeForClient(employee.getClientId());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
         }
+        employee.setCompanyCode(companyCode);
 
         if (employee.getEmployeeCode() != null && !employee.getEmployeeCode().isBlank()) {
             String normalizedCode = employee.getEmployeeCode().trim().toUpperCase();
-            Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(normalizedCode);
-            if (existingCodeOwner.isPresent()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(null);
+            if (isEmployeeCodeForCompany(normalizedCode, companyCode)) {
+                Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(normalizedCode);
+                if (existingCodeOwner.isPresent()) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(null);
+                }
+                employee.setEmployeeCode(normalizedCode);
+            } else {
+                // Keep flow intact and force valid default code generation.
+                employee.setEmployeeCode(null);
             }
-            employee.setEmployeeCode(normalizedCode);
         }
 
         // Step 1: Plain password (could be pre-set or generated)
@@ -163,8 +181,14 @@ public class EmployeeController {
 
     // Get Employee by ID
     @GetMapping("/{id}")
-    public ResponseEntity<Employee> getEmployeeById(@PathVariable Long id) {
-        return employeeService.getEmployeeById(id)
+    public ResponseEntity<Employee> getEmployeeById(
+            @PathVariable String id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        Optional<Employee> employeeOptional = resolveEmployeeByIdOrCode(id, effectiveClientId);
+
+        return employeeOptional
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -191,7 +215,13 @@ public class EmployeeController {
 
     // Get All Employees
     @GetMapping
-    public ResponseEntity<List<Employee>> getAllEmployees() {
+    public ResponseEntity<List<Employee>> getAllEmployees(
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        if (effectiveClientId != null) {
+            return ResponseEntity.ok(employeeService.getEmployeesByClientId(effectiveClientId));
+        }
         return ResponseEntity.ok(employeeService.getAllEmployees());
     }
 
@@ -216,9 +246,14 @@ public class EmployeeController {
         @PutMapping("/update/{id}")
     public ResponseEntity<Object> updateEmployee(
             @PathVariable Long id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId,
             @RequestBody Employee updatedEmployeeData) {
 
-        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        Optional<Employee> optionalEmployee = effectiveClientId != null
+                ? employeeRepository.findByIdAndClientId(id, effectiveClientId)
+                : employeeRepository.findById(id);
         if (optionalEmployee.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found with ID: " + id);
         }
@@ -246,21 +281,22 @@ public class EmployeeController {
         existingEmployee.setShiftEndTime(updatedEmployeeData.getShiftEndTime());
 
         String companyCode = updatedEmployeeData.getCompanyCode();
-        if (companyCode == null || companyCode.isBlank()) {
-            companyCode = existingEmployee.getCompanyCode();
+        try {
+            companyCode = resolveCompanyCodeForClient(existingEmployee.getClientId());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Invalid client mapping for employee");
         }
-        if (companyCode == null || companyCode.isBlank()) {
-            return ResponseEntity.badRequest().body("companyCode is required");
-        }
-        companyCode = companyCode.trim().toUpperCase();
         existingEmployee.setCompanyCode(companyCode);
 
         String requestedCode = updatedEmployeeData.getEmployeeCode();
         String finalEmployeeCode;
         if (requestedCode == null || requestedCode.isBlank()) {
-            finalEmployeeCode = companyCode + ".EMP" + existingEmployee.getId();
+            finalEmployeeCode = buildDefaultEmployeeCode(companyCode, existingEmployee.getId());
         } else {
-            finalEmployeeCode = requestedCode.trim().toUpperCase();
+            String normalizedRequestedCode = requestedCode.trim().toUpperCase();
+            finalEmployeeCode = isEmployeeCodeForCompany(normalizedRequestedCode, companyCode)
+                    ? normalizedRequestedCode
+                    : buildDefaultEmployeeCode(companyCode, existingEmployee.getId());
         }
 
         Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(finalEmployeeCode);
@@ -277,9 +313,14 @@ public class EmployeeController {
     @PutMapping("/{id}/employee-code")
     public ResponseEntity<Object> updateEmployeeCode(
             @PathVariable Long id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId,
             @RequestBody Map<String, String> payload) {
 
-        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        Optional<Employee> optionalEmployee = effectiveClientId != null
+                ? employeeRepository.findByIdAndClientId(id, effectiveClientId)
+                : employeeRepository.findById(id);
         if (optionalEmployee.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found with ID: " + id);
         }
@@ -289,13 +330,23 @@ public class EmployeeController {
             return ResponseEntity.badRequest().body("employeeCode is required");
         }
 
-        String trimmedCode = newEmployeeCode.trim();
+        String trimmedCode = newEmployeeCode.trim().toUpperCase();
+        Employee employee = optionalEmployee.get();
+        String expectedCompanyCode;
+        try {
+            expectedCompanyCode = resolveCompanyCodeForClient(employee.getClientId());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Invalid client mapping for employee");
+        }
+        if (!isEmployeeCodeForCompany(trimmedCode, expectedCompanyCode)) {
+            return ResponseEntity.badRequest().body("employeeCode must start with " + expectedCompanyCode + ".");
+        }
+
         Optional<Employee> existingCodeOwner = employeeRepository.findByEmployeeCode(trimmedCode);
         if (existingCodeOwner.isPresent() && !existingCodeOwner.get().getId().equals(id)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body("employeeCode already exists");
         }
 
-        Employee employee = optionalEmployee.get();
         employee.setEmployeeCode(trimmedCode);
         employeeRepository.save(employee);
 
@@ -304,7 +355,19 @@ public class EmployeeController {
 
     // Delete Employee by ID
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteEmployeeById(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteEmployeeById(
+            @PathVariable Long id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        if (effectiveClientId != null) {
+            Optional<Employee> employeeOptional = employeeRepository.findByIdAndClientId(id, effectiveClientId);
+            if (employeeOptional.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            employeeRepository.delete(employeeOptional.get());
+            return ResponseEntity.noContent().build();
+        }
         employeeService.deleteEmployeeById(id);
         return ResponseEntity.noContent().build();
     }
@@ -360,25 +423,39 @@ public class EmployeeController {
     public ResponseEntity<Object> loginEmployee(@RequestBody Map<String, String> loginData) {
         String username = loginData.get("username");
         String rawPassword = loginData.get("password");
+        String companyCode = loginData.get("companyCode");
 
-        logger.info("🔐 Login attempt - Username: {}", username);
+        logger.info("Login attempt - Username: {}, companyCode: {}", username, companyCode);
 
-        Optional<Employee> employeeOptional = employeeRepository.findByUsername(username);
- 
-        if (employeeOptional.isPresent()) {
-            Employee employee = employeeOptional.get();
-            if (passwordEncoder.matches(rawPassword, employee.getPassword())) {
-                logger.info("✅ Login successful for user: {}", username);
-                return ResponseEntity.ok(employee); // success = valid JSON
-            } else {
-                logger.warn("❌ Invalid password for user: {}", username);
+        if (companyCode != null && !companyCode.isBlank()) {
+            List<String> tenantRows = masterJdbcTemplate.query(
+                    "SELECT tenant_db_name FROM clients WHERE LOWER(company_code) = ? AND provisioning_status = 'ACTIVE'",
+                    (rs, rowNum) -> rs.getString(1),
+                    companyCode.trim().toLowerCase()
+            );
+            if (!tenantRows.isEmpty() && tenantRows.get(0) != null && !tenantRows.get(0).isBlank()) {
+                TenantContext.setTenantDb(tenantRows.get(0));
             }
-        } else {
-            logger.warn("❌ User not found: {}", username);
         }
 
-        // failure = also return JSON
-        return ResponseEntity.status(401).body(Map.of("error", "Invalid username or password"));
+        try {
+            Optional<Employee> employeeOptional = employeeRepository.findByUsername(username);
+
+            if (employeeOptional.isPresent()) {
+                Employee employee = employeeOptional.get();
+                if (passwordEncoder.matches(rawPassword, employee.getPassword())) {
+                    logger.info("Login successful for user: {}", username);
+                    return ResponseEntity.ok(employee);
+                }
+                logger.warn("Invalid password for user: {}", username);
+            } else {
+                logger.warn("User not found: {}", username);
+            }
+
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid username or password"));
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     // Upload image
@@ -471,7 +548,79 @@ public class EmployeeController {
     public ResponseEntity<String> testEndpoint() {
         return ResponseEntity.ok("Employee Controller is working!");
     }
+
+    private Long resolveClientId(Long requestClientId, Long headerClientId) {
+        return requestClientId != null ? requestClientId : headerClientId;
+    }
+
+    private String resolveCompanyCodeForClient(Long clientId) {
+        if (clientId == null) {
+            throw new IllegalArgumentException("clientId is required");
+        }
+        List<String> rows = masterJdbcTemplate.query(
+                "SELECT company_code FROM clients WHERE id = ?",
+                (rs, rowNum) -> rs.getString(1),
+                clientId
+        );
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Client company code not found");
+        }
+        String code = rows.get(0);
+        if (code == null || code.isBlank()) {
+            throw new IllegalArgumentException("Client company code not found");
+        }
+        return code.trim().toLowerCase();
+    }
+
+    private boolean isEmployeeCodeForCompany(String employeeCode, String companyCode) {
+        if (employeeCode == null || companyCode == null) {
+            return false;
+        }
+        return employeeCode.toLowerCase().startsWith(companyCode.toLowerCase() + ".");
+    }
+
+    private String buildDefaultEmployeeCode(String companyCode, Long employeeId) {
+        return companyCode + ".EMP" + employeeId;
+    }
+
+    private Optional<Employee> resolveEmployeeByIdOrCode(String idOrCode, Long clientId) {
+        if (idOrCode == null || idOrCode.isBlank()) {
+            return Optional.empty();
+        }
+
+        String normalized = idOrCode.trim();
+
+        Optional<Employee> byNumericId = tryFindByNumericId(normalized, clientId);
+        if (byNumericId.isPresent()) {
+            return byNumericId;
+        }
+
+        Optional<Employee> byCode = employeeRepository.findByEmployeeCode(normalized.toUpperCase());
+        if (byCode.isPresent() && (clientId == null || clientId.equals(byCode.get().getClientId()))) {
+            return byCode;
+        }
+
+        Matcher matcher = Pattern.compile("(?i)(?:^|\\.)EMP(\\d+)$").matcher(normalized);
+        if (matcher.find()) {
+            return tryFindByNumericId(matcher.group(1), clientId);
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<Employee> tryFindByNumericId(String rawId, Long clientId) {
+        try {
+            Long parsedId = Long.parseLong(rawId);
+            if (clientId != null) {
+                return employeeRepository.findByIdAndClientId(parsedId, clientId);
+            }
+            return employeeRepository.findById(parsedId);
+        } catch (NumberFormatException ignored) {
+            return Optional.empty();
+        }
+    }
 }
+
 
 
 

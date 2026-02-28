@@ -8,6 +8,7 @@ import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
 
@@ -31,6 +32,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RestController
@@ -45,6 +48,9 @@ private EmployeeService employeeService;
 
 @Autowired
 private LeavePermissionRepository leavePermissionRepository;
+
+@Autowired
+private AttendanceMetricsService attendanceMetricsService;
 
    @Autowired
     private AttendanceService attendanceService;
@@ -115,10 +121,14 @@ public ResponseEntity<?> submitTimeoutReason(@RequestParam Long recordId, @Reque
     }
 }
 @GetMapping("/missed-timeout")
-public List<Map<String, Object>> getMissedTimeoutEmployees() {
+public List<Map<String, Object>> getMissedTimeoutEmployees(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
     List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present");
     List<Map<String, Object>> result = new ArrayList<>();
     for (AttendanceRecord record : records) {
+        if (clientId != null && (record.getEmployee() == null || !clientId.equals(record.getEmployee().getClientId()))) {
+            continue;
+        }
         Map<String, Object> map = new HashMap<>();
         map.put("attendanceId", record.getId());
         map.put("firstName", record.getEmployee().getFirstName());
@@ -316,7 +326,7 @@ public ResponseEntity<String> markTimeIn(
     }
     
 
-    @GetMapping("/api/attendance/{recordId}/time-in")
+    @GetMapping({"/{recordId}/time-in", "/api/attendance/{recordId}/time-in"})
     public ResponseEntity<byte[]> getTimeInImage(@PathVariable Long recordId) {
         Optional<AttendanceRecord> record = attendanceRecordRepository.findById(recordId);
         if (record.isPresent() && record.get().getImageIn() != null) {
@@ -599,9 +609,12 @@ public ResponseEntity<Map<String, Object>> getAttendanceByDateAndEmployeeId(
                 return ResponseEntity.ok(response);
             })
             .orElseGet(() -> {
-                Map<String, Object> error = new HashMap<>();
-                error.put("error", "No record found");
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+                Map<String, Object> response = new HashMap<>();
+                response.put("found", false);
+                response.put("employeeId", employeeId);
+                response.put("date", date);
+                response.put("message", "No record found");
+                return ResponseEntity.ok(response);
             });
 }
 
@@ -610,9 +623,16 @@ public ResponseEntity<Map<String, Object>> getAttendanceByDateAndEmployeeId(
 
     @GetMapping("/latest/{employeeId}")
     public ResponseEntity<?> getLatestAttendance(@PathVariable Long employeeId) {
-        return attendanceService.getLatestAttendanceRecord(employeeId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        Optional<AttendanceRecord> latestRecord = attendanceService.getLatestAttendanceRecord(employeeId);
+        if (latestRecord.isPresent()) {
+            return ResponseEntity.ok(latestRecord.get());
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("found", false);
+        response.put("employeeId", employeeId);
+        response.put("message", "No attendance record found.");
+        return ResponseEntity.ok(response);
     }
 @GetMapping("/latest-today-or-yesterday/{employeeId}")
 public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employeeId) {
@@ -632,8 +652,11 @@ public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employ
         return ResponseEntity.ok(yesterdayRecords.get(0));
     }
 
-    // If neither found, return 404
-    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No attendance record found for today or yesterday.");
+    Map<String, Object> response = new HashMap<>();
+    response.put("found", false);
+    response.put("employeeId", employeeId);
+    response.put("message", "No attendance record found for today or yesterday.");
+    return ResponseEntity.ok(response);
 }
 
     @GetMapping("/employee/{employeeId}")
@@ -657,7 +680,8 @@ public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employ
                 .collect(Collectors.toList());
     }
 @GetMapping("/today-timein")
-public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails() {
+public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
     String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     
     List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
@@ -666,7 +690,8 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails() {
     List<Map<String, Object>> result = records.stream()
         .filter(record -> 
             "Present".equalsIgnoreCase(record.getAttendanceStatus()) &&
-            record.getTimeIn() != null
+            record.getTimeIn() != null &&
+            (clientId == null || (record.getEmployee() != null && clientId.equals(record.getEmployee().getClientId())))
         )
         .map(record -> {
             Map<String, Object> map = new HashMap<>();
@@ -684,10 +709,13 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails() {
 }
 
 @GetMapping("/today-absent")
-public List<Map<String, Object>> getTodayAbsent() {
+public List<Map<String, Object>> getTodayAbsent(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
     List<AttendanceRecord> absentRecords = attendanceService.getTodayAbsentRecords();
 
-    return absentRecords.stream().map(record -> {
+    return absentRecords.stream()
+    .filter(record -> clientId == null || (record.getEmployee() != null && clientId.equals(record.getEmployee().getClientId())))
+    .map(record -> {
         Map<String, Object> map = new HashMap<>();
         map.put("id", record.getEmployee().getId());
         map.put("name", record.getEmployee().getFirstName());
@@ -698,16 +726,18 @@ public List<Map<String, Object>> getTodayAbsent() {
     }).collect(Collectors.toList());
 }
 @GetMapping("/today-time-in-late")
-public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails() {
+public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
     String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
 
     List<Map<String, Object>> result = records.stream()
         .filter(record -> {
             if (record.getTimeIn() != null && record.getEmployee() != null) {
-                LocalTime timeIn = record.getTimeIn().toLocalTime();
-                LocalTime cutoffTime = resolveLateCutoff(record.getEmployee());
-                return timeIn.isAfter(cutoffTime);
+                if (clientId != null && !clientId.equals(record.getEmployee().getClientId())) {
+                    return false;
+                }
+                return attendanceMetricsService.calculateDailyLateMinutes(record) > 0;
             }
             return false;
         })
@@ -719,6 +749,7 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails() {
             map.put("profileImage", record.getEmployee().getProfileImage());
             map.put("timeIn", record.getTimeIn());
             map.put("status", record.getAttendanceStatus());
+            map.put("lateMinutes", attendanceMetricsService.calculateDailyLateMinutes(record));
             return map;
         })
         .collect(Collectors.toList());
@@ -742,9 +773,7 @@ public ResponseEntity<List<Map<String, Object>>> getLateArrivalsByDate(@RequestP
     List<Map<String, Object>> result = records.stream()
         .filter(record -> {
             if (record.getTimeIn() != null && record.getEmployee() != null) {
-                LocalTime timeIn = record.getTimeIn().toLocalTime();
-                LocalTime cutoffTime = resolveLateCutoff(record.getEmployee());
-                return timeIn.isAfter(cutoffTime);
+                return attendanceMetricsService.calculateDailyLateMinutes(record) > 0;
             }
             return false;
         })
@@ -757,6 +786,7 @@ public ResponseEntity<List<Map<String, Object>>> getLateArrivalsByDate(@RequestP
             map.put("profileImage", record.getEmployee().getProfileImage()); // Optional
             map.put("timeIn", record.getTimeIn().toString());
             map.put("status", record.getAttendanceStatus());
+            map.put("lateMinutes", attendanceMetricsService.calculateDailyLateMinutes(record));
             return map;
         })
         .collect(Collectors.toList());
@@ -766,10 +796,11 @@ public ResponseEntity<List<Map<String, Object>>> getLateArrivalsByDate(@RequestP
 
 
   @GetMapping("/summary")
-public Map<String, Object> getDashboardSummary() {
+public Map<String, Object> getDashboardSummary(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
     Map<String, Object> summary = new HashMap<>();
 
-    long totalEmployees = employeeRepository.count();
+    long totalEmployees = clientId == null ? employeeRepository.count() : employeeRepository.countByClientId(clientId);
     summary.put("totalEmployees", totalEmployees);
 
     // Formatters
@@ -781,39 +812,48 @@ public Map<String, Object> getDashboardSummary() {
     List<AttendanceRecord> todayRecords = attendanceRecordRepository.findByDate(todayDate);
     List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByDate(yesterdayDate);
 
+    if (clientId != null) {
+        todayRecords = todayRecords.stream()
+                .filter(a -> a.getEmployee() != null && clientId.equals(a.getEmployee().getClientId()))
+                .collect(Collectors.toList());
+        yesterdayRecords = yesterdayRecords.stream()
+                .filter(a -> a.getEmployee() != null && clientId.equals(a.getEmployee().getClientId()))
+                .collect(Collectors.toList());
+    }
+
     // Today stats
     long todayPresent = todayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
     long todayAbsent = todayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
-    long todayLate = todayRecords.stream().filter(a -> {
-        if (a.getTimeIn() == null || a.getEmployee() == null) {
-            return false;
-        }
-        LocalTime cutoffTime = resolveLateCutoff(a.getEmployee()).plusMinutes(5);
-        return a.getTimeIn().toLocalTime().isAfter(cutoffTime);
-    }).count();
+    long todayLate = todayRecords.stream()
+            .filter(a -> attendanceMetricsService.calculateDailyLateMinutes(a) > 0)
+            .count();
     long todayOnTime = todayPresent - todayLate;
+    int todayLateMinutes = todayRecords.stream()
+            .mapToInt(attendanceMetricsService::calculateDailyLateMinutes)
+            .sum();
 
     // Yesterday stats
     long yesterdayPresent = yesterdayRecords.stream().filter(a -> "Present".equalsIgnoreCase(a.getAttendanceStatus())).count();
     long yesterdayAbsent = yesterdayRecords.stream().filter(a -> "Absent".equalsIgnoreCase(a.getAttendanceStatus())).count();
-    long yesterdayLate = yesterdayRecords.stream().filter(a -> {
-        if (a.getTimeIn() == null || a.getEmployee() == null) {
-            return false;
-        }
-        LocalTime cutoffTime = resolveLateCutoff(a.getEmployee()).plusMinutes(5);
-        return a.getTimeIn().toLocalTime().isAfter(cutoffTime);
-    }).count();
+    long yesterdayLate = yesterdayRecords.stream()
+            .filter(a -> attendanceMetricsService.calculateDailyLateMinutes(a) > 0)
+            .count();
     long yesterdayOnTime = yesterdayPresent - yesterdayLate;
+    int yesterdayLateMinutes = yesterdayRecords.stream()
+            .mapToInt(attendanceMetricsService::calculateDailyLateMinutes)
+            .sum();
 
     // Percentage comparisons (today - yesterday) / yesterday * 100
     summary.put("presentToday", todayPresent);
     summary.put("absentToday", todayAbsent);
     summary.put("lateArrivalsToday", todayLate);
+    summary.put("lateMinutesToday", todayLateMinutes);
     summary.put("onTimeToday", todayOnTime);
 
     summary.put("presentYesterday", yesterdayPresent);
     summary.put("absentYesterday", yesterdayAbsent);
     summary.put("lateArrivalsYesterday", yesterdayLate);
+    summary.put("lateMinutesYesterday", yesterdayLateMinutes);
     summary.put("onTimeYesterday", yesterdayOnTime);
 
     summary.put("absentChangePercent", calculatePercentageChange(yesterdayAbsent, todayAbsent));
@@ -829,72 +869,29 @@ private double calculatePercentageChange(long oldValue, long newValue) {
     return ((double) (newValue - oldValue) / oldValue) * 100;
 }
 
-private LocalTime resolveShiftStart(Employee employee) {
-    if (employee != null && employee.getShiftStartTime() != null && !employee.getShiftStartTime().isBlank()) {
-        try {
-            return LocalTime.parse(employee.getShiftStartTime().trim());
-        } catch (DateTimeParseException ignored) {
-            // Fallback to default on bad data.
-        }
-    }
-    return LocalTime.of(10, 0);
-}
-
-private LocalTime resolveLateCutoff(Employee employee) {
-    return resolveShiftStart(employee).plusMinutes(10);
-}
-
-
-
 //////////////////////filter
 @GetMapping("/monthly-summary")
 public ResponseEntity<?> getEmployeeMonthlySummary(
-        @RequestParam Long employeeId,
+        @RequestParam String employeeId,
         @RequestParam int month,
         @RequestParam int year) {
 
-    Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
+    Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId);
     if (employeeOpt.isEmpty()) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
     }
     Employee employee = employeeOpt.get();
+    Long resolvedEmployeeId = employee.getId();
 
-    // Get all attendance records for the employee
-    List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
-
-    // Date pattern for filtering (assuming dd/MM/yyyy format)
-    String monthPattern = String.format("/%02d/%d", month, year);
-
-    // Absent count for the month
-    long absentCount = records.stream()
-            .filter(r -> r.getAttendanceStatus() != null
-                    && r.getAttendanceStatus().equalsIgnoreCase("Absent")
-                    && r.getDate() != null
-                    && r.getDate().endsWith(monthPattern))
-            .count();
-
-    // Total missed times for the month (sum of missedTimes)
-    int totalMissedTimes = records.stream()
-            .filter(r -> r.getDate() != null
-                    && r.getDate().endsWith(monthPattern)
-                    && r.getMissedTimes() != null)
-            .mapToInt(AttendanceRecord::getMissedTimes)
-            .sum();
-
-    // Count leave permissions of type "Permission" for the month
-    List<LeavePermission> permissions = leavePermissionRepository.findByEmployeeId(employeeId);
-    long permissionCount = permissions.stream()
-            .filter(p -> p.getDate() != null
-                    && p.getDate().endsWith(monthPattern)
-                    && "Permission".equalsIgnoreCase(p.getLeaveType()))
-            .count();
+    AttendanceMetricsService.MonthlyMetrics metrics =
+            attendanceMetricsService.calculateMonthlyMetrics(resolvedEmployeeId, month, year);
 
     // Total days in the month
     int daysInMonth = java.time.YearMonth.of(year, month).lengthOfMonth();
 
     // Prepare response
     Map<String, Object> response = new HashMap<>();
-    response.put("employeeId", employee.getId());
+    response.put("employeeId", resolvedEmployeeId);
     response.put("firstName", employee.getFirstName());
     response.put("lastName", employee.getLastName());
     response.put("branch", employee.getBranch());
@@ -904,12 +901,48 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("email", employee.getEmail());
     response.put("address", employee.getAddress());
     response.put("salary", employee.getSalary());
-    response.put("absentCount", absentCount);
-    response.put("totalMissedTimes", totalMissedTimes);
-    response.put("permissionCount", permissionCount);
+    response.put("absentCount", metrics.absentCount());
+    response.put("totalLateMinutes", metrics.monthlyLateMinutes());
+    response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
+    response.put("totalMissedTimes", metrics.totalMissedMinutes());
+    response.put("permissionCount", metrics.approvedPermissionCount());
+    response.put("approvedPermissionCount", metrics.approvedPermissionCount());
+    response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
+    response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
+    response.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
     response.put("daysInMonth", daysInMonth);
 
     return ResponseEntity.ok(response);
+}
+
+private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
+    if (employeeRef == null || employeeRef.isBlank()) {
+        return Optional.empty();
+    }
+
+    String normalized = employeeRef.trim();
+
+    try {
+        return employeeRepository.findById(Long.parseLong(normalized));
+    } catch (NumberFormatException ignored) {
+        // Continue with employee-code lookup.
+    }
+
+    Optional<Employee> byCode = employeeRepository.findByEmployeeCode(normalized.toUpperCase());
+    if (byCode.isPresent()) {
+        return byCode;
+    }
+
+    Matcher matcher = Pattern.compile("(?i)(?:^|\\.)EMP(\\d+)$").matcher(normalized);
+    if (matcher.find()) {
+        try {
+            return employeeRepository.findById(Long.parseLong(matcher.group(1)));
+        } catch (NumberFormatException ignored) {
+            // Keep empty below.
+        }
+    }
+
+    return Optional.empty();
 }
 
 

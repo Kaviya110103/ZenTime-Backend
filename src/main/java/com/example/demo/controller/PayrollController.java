@@ -20,6 +20,7 @@ import com.example.demo.MODELS.EmailDetails;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
+import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.EmailService;
 
 @RestController
@@ -36,6 +37,9 @@ public class PayrollController {
 
     @Autowired
     private EmailService emailService;
+
+    @Autowired
+    private AttendanceMetricsService attendanceMetricsService;
 
     @GetMapping("/month-payroll")
     public ResponseEntity<?> calculateMonthPayroll(
@@ -54,21 +58,19 @@ public class PayrollController {
         YearMonth yearMonth = YearMonth.of(year, month);
         int daysInMonth = yearMonth.lengthOfMonth();
 
-        // 3. Get absent days count for the month  1092252
-        String monthStr = String.format("%02d/%02d/%d", 1, month, year); // e.g. 01/06/2025
-        String monthPattern = String.format("/%02d/%d", month, year); // e.g. /06/2025
+        AttendanceMetricsService.MonthlyMetrics metrics =
+                attendanceMetricsService.calculateMonthlyMetrics(employeeId, month, year);
 
-        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
-        long absentDays = records.stream()
-            .filter(r -> r.getAttendanceStatus() != null
-                && r.getAttendanceStatus().equalsIgnoreCase("Absent")
-                && r.getDate() != null
-                && r.getDate().endsWith(monthPattern))
-            .count();
-
-        // 4. Calculate per day salary and net salary
+        // 4. Calculate salary deductions consistently using monthly metrics.
         double perDaySalary = salary / daysInMonth;
-        double netSalary = salary - ((absentDays-1)* perDaySalary);
+        double absentDeduction = metrics.absentCount() * perDaySalary;
+        int shiftMinutesPerDay = attendanceMetricsService.resolveShiftDurationMinutes(employee);
+        double perMinuteSalary = perDaySalary / shiftMinutesPerDay;
+        double missedTimeDeduction = metrics.totalMissedMinutes() * perMinuteSalary;
+        double netSalary = salary - absentDeduction - missedTimeDeduction;
+        if (netSalary < 0) {
+            netSalary = 0;
+        }
 
         // 5. Prepare response
         Map<String, Object> response = new HashMap<>();
@@ -78,8 +80,18 @@ public class PayrollController {
         response.put("year", year);
         response.put("salary", salary);
         response.put("daysInMonth", daysInMonth);
-        response.put("absentDays", (absentDays-1));
+        response.put("absentDays", metrics.absentCount());
+        response.put("totalLateMinutes", metrics.monthlyLateMinutes());
+        response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
+        response.put("totalMissedMinutes", metrics.totalMissedMinutes());
+        response.put("approvedPermissionCount", metrics.approvedPermissionCount());
+        response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
+        response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
+        response.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
         response.put("perDaySalary", perDaySalary);
+        response.put("perMinuteSalary", perMinuteSalary);
+        response.put("absentDeduction", absentDeduction);
+        response.put("missedTimeDeduction", missedTimeDeduction);
         response.put("netSalary", netSalary);
 
         return ResponseEntity.ok(response);

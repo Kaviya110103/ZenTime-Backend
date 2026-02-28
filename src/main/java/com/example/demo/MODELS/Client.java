@@ -58,6 +58,12 @@ public class Client {
     @NotBlank
     private String password; // stored hashed
 
+    @Column(name = "tenant_db_name")
+    private String tenantDbName;
+
+    @Column(name = "provisioning_status")
+    private String provisioningStatus;
+
     public Client() {}
 
     // Getters / setters
@@ -108,5 +114,21 @@ public void setBranchNames(List<String> branchNames) {
 
      public List<String> getBranchNames() {
         return branchNames;
+    }
+
+    public String getTenantDbName() {
+        return tenantDbName;
+    }
+
+    public void setTenantDbName(String tenantDbName) {
+        this.tenantDbName = tenantDbName;
+    }
+
+    public String getProvisioningStatus() {
+        return provisioningStatus;
+    }
+
+    public void setProvisioningStatus(String provisioningStatus) {
+        this.provisioningStatus = provisioningStatus;
     }
 }

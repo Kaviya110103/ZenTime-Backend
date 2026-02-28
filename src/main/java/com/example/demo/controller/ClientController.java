@@ -1,7 +1,9 @@
 package com.example.demo.controller;
 
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.http.MediaType;
@@ -72,6 +74,8 @@ public class ClientController {
         private String registeredDate;
         private String workingHours;
         private String username;
+        private String tenantDbName;
+        private String provisioningStatus;
 
         public static ClientResponse fromEntity(Client c) {
             ClientResponse r = new ClientResponse();
@@ -86,6 +90,8 @@ public class ClientController {
             r.registeredDate = c.getRegisteredDate() != null ? c.getRegisteredDate().toString() : null;
             r.workingHours = c.getWorkingHours();
             r.username = c.getUsername();
+            r.tenantDbName = c.getTenantDbName();
+            r.provisioningStatus = c.getProvisioningStatus();
             return r;
         }
 
@@ -100,10 +106,12 @@ public class ClientController {
         public String getRegisteredDate() { return registeredDate; }
         public String getWorkingHours() { return workingHours; }
         public String getUsername() { return username; }
+        public String getTenantDbName() { return tenantDbName; }
+        public String getProvisioningStatus() { return provisioningStatus; }
     }
 
     @PostMapping
-    public ResponseEntity<ClientResponse> createClient(@Valid @RequestBody Client client) {
+    public ResponseEntity<?> createClient(@Valid @RequestBody Client client) {
         if (client.getUsername() == null || client.getUsername().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
@@ -115,7 +123,14 @@ public class ClientController {
         String plainPassword = client.getPassword();
         client.setPassword(passwordEncoder.encode(plainPassword));
 
-        Client saved = clientService.createClient(client);
+        Client saved;
+        try {
+            saved = clientService.createClient(client);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
 
         EmailDetails emailDetails = new EmailDetails();
         emailDetails.setSender("wingrootechnologies@gmail.com");
@@ -182,12 +197,41 @@ public class ClientController {
     }
 
     @PutMapping("/{id:\\d+}")
-    public ResponseEntity<ClientResponse> updateClient(@PathVariable Long id, @Valid @RequestBody Client client) {
+    public ResponseEntity<?> updateClient(@PathVariable Long id, @Valid @RequestBody Client client) {
         try {
             Client updated = clientService.update(id, client);
             return ResponseEntity.ok(ClientResponse.fromEntity(updated));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("message", e.getMessage()));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping(path = "/{id:\\d+}/tenant-provision/retry", consumes = MediaType.ALL_VALUE)
+    public ResponseEntity<?> retryTenantProvisioning(@PathVariable Long id) {
+        try {
+            Client updated = clientService.retryTenantProvisioning(id);
+            return ResponseEntity.ok(ClientResponse.fromEntity(updated));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @GetMapping(path = "/{id:\\d+}/tenant-health", consumes = MediaType.ALL_VALUE)
+    public ResponseEntity<Map<String, Object>> getTenantHealth(@PathVariable Long id) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("clientId", id);
+        try {
+            boolean healthy = clientService.isTenantHealthy(id);
+            response.put("healthy", healthy);
+            response.put("status", healthy ? "ACTIVE" : "UNHEALTHY");
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            response.put("healthy", false);
+            response.put("status", "NOT_FOUND");
+            response.put("message", e.getMessage());
+            return ResponseEntity.status(404).body(response);
         }
     }
 
