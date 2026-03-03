@@ -5,9 +5,11 @@ import com.example.demo.MODELS.AttendanceRecordDTO;
 import com.example.demo.MODELS.DateUtil;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
+import com.example.demo.MODELS.Location;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.repo.LocationRepository;
 import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
@@ -51,6 +53,8 @@ private LeavePermissionRepository leavePermissionRepository;
 
 @Autowired
 private AttendanceMetricsService attendanceMetricsService;
+@Autowired
+private LocationRepository locationRepository;
 
    @Autowired
     private AttendanceService attendanceService;
@@ -61,7 +65,11 @@ private AttendanceMetricsService attendanceMetricsService;
     private AttendanceRecordRepository attendanceRecordRepository;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 @PutMapping("/start-day")
-public ResponseEntity<?> startDay(@RequestParam Long employeeId, @RequestParam String location) {
+public ResponseEntity<?> startDay(@RequestParam Long employeeId,
+                                  @RequestParam String location,
+                                  @RequestParam(value = "clientId", required = false) Long clientId,
+                                  @RequestParam(value = "latitude", required = false) Double latitude,
+                                  @RequestParam(value = "longitude", required = false) Double longitude) {
     String todayDate = LocalDate.now().format(dateFormatter);
     String yesterdayDate = LocalDate.now().minusDays(1).format(dateFormatter);
 
@@ -71,6 +79,16 @@ public ResponseEntity<?> startDay(@RequestParam Long employeeId, @RequestParam S
         return ResponseEntity.badRequest().body("Employee not found.");
     }
     Employee employee = employeeOptional.get();
+
+    if (latitude != null && longitude != null) {
+        Long effectiveClientId = clientId != null ? clientId : employee.getClientId();
+        if (!isInsideAnyBranchLocation(latitude, longitude, effectiveClientId)) {
+            Map<String, Object> inactive = new HashMap<>();
+            inactive.put("status", "Inactive");
+            inactive.put("message", "Outside assigned branch location. Submit location request.");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(inactive);
+        }
+    }
 
     // 2. Check yesterday's attendance for missing time-out
     List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, yesterdayDate);
@@ -106,6 +124,30 @@ public ResponseEntity<?> startDay(@RequestParam Long employeeId, @RequestParam S
     attendanceRecordRepository.save(record);
 
     return ResponseEntity.ok("Day started. Please mark time-in.");
+}
+
+private boolean isInsideAnyBranchLocation(double latitude, double longitude, Long clientId) {
+    List<Location> locations = clientId == null ? locationRepository.findAll() : locationRepository.findByClientId(clientId);
+    for (Location location : locations) {
+        if (location.getLatitude() == null || location.getLongitude() == null || location.getRadius() == null) {
+            continue;
+        }
+        double distance = distanceMeters(latitude, longitude, location.getLatitude(), location.getLongitude());
+        if (distance <= location.getRadius()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+private double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+    double rad = Math.PI / 180.0;
+    double dLat = (lat2 - lat1) * rad;
+    double dLon = (lon2 - lon1) * rad;
+    double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return 6371000.0 * c;
 }
     
 @PostMapping("/submit-timeout-reason")
@@ -873,12 +915,15 @@ private double calculatePercentageChange(long oldValue, long newValue) {
 @GetMapping("/monthly-summary")
 public ResponseEntity<?> getEmployeeMonthlySummary(
         @RequestParam String employeeId,
+        @RequestParam(value = "clientId", required = false) Long clientId,
         @RequestParam int month,
         @RequestParam int year) {
 
-    Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId);
+    Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId, clientId);
     if (employeeOpt.isEmpty()) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+        Map<String, String> error = new HashMap<>();
+        error.put("message", "Employee not found");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
     Employee employee = employeeOpt.get();
     Long resolvedEmployeeId = employee.getId();
@@ -906,6 +951,7 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
     response.put("totalMissedTimes", metrics.totalMissedMinutes());
     response.put("permissionCount", metrics.approvedPermissionCount());
+    response.put("totalApprovedPermissionsTaken", metrics.approvedPermissionCount());
     response.put("approvedPermissionCount", metrics.approvedPermissionCount());
     response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
     response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
@@ -915,7 +961,7 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     return ResponseEntity.ok(response);
 }
 
-private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
+private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientId) {
     if (employeeRef == null || employeeRef.isBlank()) {
         return Optional.empty();
     }
@@ -923,20 +969,27 @@ private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
     String normalized = employeeRef.trim();
 
     try {
-        return employeeRepository.findById(Long.parseLong(normalized));
+        Long id = Long.parseLong(normalized);
+        return clientId == null
+                ? employeeRepository.findById(id)
+                : employeeRepository.findByIdAndClientId(id, clientId);
     } catch (NumberFormatException ignored) {
         // Continue with employee-code lookup.
     }
 
     Optional<Employee> byCode = employeeRepository.findByEmployeeCode(normalized.toUpperCase());
-    if (byCode.isPresent()) {
+    if (byCode.isPresent()
+            && (clientId == null || clientId.equals(byCode.get().getClientId()))) {
         return byCode;
     }
 
     Matcher matcher = Pattern.compile("(?i)(?:^|\\.)EMP(\\d+)$").matcher(normalized);
     if (matcher.find()) {
         try {
-            return employeeRepository.findById(Long.parseLong(matcher.group(1)));
+            Long id = Long.parseLong(matcher.group(1));
+            return clientId == null
+                    ? employeeRepository.findById(id)
+                    : employeeRepository.findByIdAndClientId(id, clientId);
         } catch (NumberFormatException ignored) {
             // Keep empty below.
         }

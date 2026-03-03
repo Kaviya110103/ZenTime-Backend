@@ -84,6 +84,8 @@ public class PayrollController {
         response.put("totalLateMinutes", metrics.monthlyLateMinutes());
         response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
         response.put("totalMissedMinutes", metrics.totalMissedMinutes());
+        response.put("permissionCount", metrics.approvedPermissionCount());
+        response.put("totalApprovedPermissionsTaken", metrics.approvedPermissionCount());
         response.put("approvedPermissionCount", metrics.approvedPermissionCount());
         response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
         response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);

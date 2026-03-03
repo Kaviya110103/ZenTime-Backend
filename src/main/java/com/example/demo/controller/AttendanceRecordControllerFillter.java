@@ -14,12 +14,16 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.example.demo.MODELS.AttendanceRecord;
+import com.example.demo.MODELS.Employee;
 import com.example.demo.repo.AttendanceRecordRepository;
+import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.EmployeeService;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/attendance-records")
@@ -36,54 +40,74 @@ public class AttendanceRecordControllerFillter {
     @Autowired
     private AttendanceMetricsService attendanceMetricsService;
 
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
     // 1. Get all attendance details
     @GetMapping("/all")
     public List<AttendanceRecord> getAllAttendanceRecords() {
-        return attendanceRecordRepository.findAll();
+        List<AttendanceRecord> records = attendanceRecordRepository.findAll();
+        attendanceMetricsService.synchronizeMissedMinutes(records);
+        return records;
     }
 
     // 2. Get attendance details by employee ID
     @GetMapping("/by-employee")
-    public List<AttendanceRecord> getAttendanceByEmployeeId(@RequestParam Long employeeId) {
-        return attendanceRecordRepository.findByEmployeeId(employeeId);
+    public List<AttendanceRecord> getAttendanceByEmployeeId(@RequestParam String employeeId) {
+        Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+        if (employee.isEmpty()) {
+            return List.of();
+        }
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId());
+        attendanceMetricsService.synchronizeMissedMinutes(records);
+        return records;
     }
 
     // 3. Get attendance details by month and employee ID
     @GetMapping("/by-employee-month")
     public List<AttendanceRecord> getAttendanceByEmployeeIdAndMonth(
-            @RequestParam Long employeeId,
+            @RequestParam String employeeId,
             @RequestParam int month,
             @RequestParam int year) {
+        Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+        if (employee.isEmpty()) {
+            return List.of();
+        }
         String monthPattern = String.format("/%02d/%d", month, year);
-        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employeeId, monthPattern);
-
-        // Keep missedTimes aligned with the shared monthly calculation logic.
-        boolean changed = false;
-        for (AttendanceRecord record : records) {
-            int recalculated = attendanceMetricsService.calculateDailyMissedMinutes(record);
-            Integer current = record.getMissedTimes();
-            if (current == null || current != recalculated) {
-                record.setMissedtimes(recalculated);
-                changed = true;
-            }
-        }
-        if (changed) {
-            attendanceRecordRepository.saveAll(records);
-        }
-
+        List<AttendanceRecord> records =
+                attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employee.get().getId(), monthPattern);
+        attendanceMetricsService.synchronizeMissedMinutes(records);
         return records;
     }
 
     @GetMapping("/by-employee-month-metrics")
     public ResponseEntity<?> getAttendanceMetricsByEmployeeIdAndMonth(
-            @RequestParam Long employeeId,
+            @RequestParam String employeeId,
             @RequestParam int month,
             @RequestParam int year) {
+        Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+        if (employee.isEmpty()) {
+            Map<String, Object> emptyResponse = new HashMap<>();
+            emptyResponse.put("employeeId", employeeId);
+            emptyResponse.put("month", month);
+            emptyResponse.put("year", year);
+            emptyResponse.put("absentCount", 0);
+            emptyResponse.put("totalLateMinutes", 0);
+            emptyResponse.put("totalEarlyOutMinutes", 0);
+            emptyResponse.put("totalMissedTimes", 0);
+            emptyResponse.put("approvedPermissionCount", 0);
+            emptyResponse.put("approvedPermissionMinutes", 0);
+            emptyResponse.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
+            emptyResponse.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
+            return ResponseEntity.ok(emptyResponse);
+        }
+
+        Long resolvedEmployeeId = employee.get().getId();
         AttendanceMetricsService.MonthlyMetrics metrics =
-                attendanceMetricsService.calculateMonthlyMetrics(employeeId, month, year);
+                attendanceMetricsService.calculateMonthlyMetrics(resolvedEmployeeId, month, year);
 
         Map<String, Object> response = new HashMap<>();
-        response.put("employeeId", employeeId);
+        response.put("employeeId", resolvedEmployeeId);
         response.put("month", month);
         response.put("year", year);
         response.put("absentCount", metrics.absentCount());
@@ -100,17 +124,30 @@ public class AttendanceRecordControllerFillter {
     // 4. Get attendance details by date and employee ID
     @GetMapping("/by-employee-date")
     public ResponseEntity<?> getAttendanceByEmployeeIdAndDate(
-            @RequestParam Long employeeId,
+            @RequestParam String employeeId,
             @RequestParam String date) {
-        return attendanceRecordRepository.findByDateAndEmployeeId(date, employeeId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+        if (employee.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+
+        Optional<AttendanceRecord> recordOpt =
+                attendanceRecordRepository.findByDateAndEmployeeId(date, employee.get().getId());
+        if (recordOpt.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+
+        AttendanceRecord record = recordOpt.get();
+        attendanceMetricsService.synchronizeMissedMinutes(record);
+        return ResponseEntity.ok(record);
     }
 
     // 5. Get attendance details by employee branch
     @GetMapping("/by-branch")
     public List<AttendanceRecord> getAttendanceByBranch(@RequestParam String branch) {
-        return attendanceRecordRepository.findByEmployeeBranch(branch);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeBranch(branch);
+        attendanceMetricsService.synchronizeMissedMinutes(records);
+        return records;
     }
 
     // 6. Get all details by particular month and particular date for all employees
@@ -120,7 +157,9 @@ public class AttendanceRecordControllerFillter {
             @RequestParam int year,
             @RequestParam String date) {
         String monthPattern = String.format("/%02d/%d", month, year);
-        return attendanceRecordRepository.findByMonthPatternAndDate(monthPattern, date);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByMonthPatternAndDate(monthPattern, date);
+        attendanceMetricsService.synchronizeMissedMinutes(records);
+        return records;
     }
 
     // 7. Get all attendance details by date and attendance status (Present/Absent)
@@ -128,7 +167,9 @@ public class AttendanceRecordControllerFillter {
     public List<AttendanceRecord> getAttendanceByDateAndStatus(
             @RequestParam String date,
             @RequestParam String attendanceStatus) {
-        return attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
+        attendanceMetricsService.synchronizeMissedMinutes(records);
+        return records;
     }
     @GetMapping("/branches")
 public List<String> getAllBranches() {
@@ -186,7 +227,9 @@ public List<AttendanceRecord> getAttendanceByStatusAndMonth(
         @RequestParam int month,
         @RequestParam int year) {
     String monthPattern = String.format("/%02d/%d", month, year);
-    return attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
+    attendanceMetricsService.synchronizeMissedMinutes(records);
+    return records;
 }
 
 @GetMapping("/by-month-status-branch")
@@ -196,15 +239,22 @@ public List<AttendanceRecord> getAttendanceByMonthStatusBranch(
         @RequestParam String attendanceStatus,
         @RequestParam String branch) {
     String monthPattern = String.format("/%02d/%d", month, year);
-    return attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
+    attendanceMetricsService.synchronizeMissedMinutes(records);
+    return records;
 }
 
 
 
 @GetMapping("/check-today-attendance")
-public ResponseEntity<?> checkTodayAttendance(@RequestParam Long employeeId) {
+public ResponseEntity<?> checkTodayAttendance(@RequestParam String employeeId) {
+    Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+    if (employee.isEmpty()) {
+        return ResponseEntity.ok("Employee not found.");
+    }
+
     String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, today);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeIdAndDate(employee.get().getId(), today);
 
     if (records.isEmpty()) {
         return ResponseEntity.ok("No attendance for today!");
@@ -233,20 +283,55 @@ public ResponseEntity<?> checkTodayAttendance(@RequestParam Long employeeId) {
 @GetMapping("/by-date")
 public List<AttendanceRecord> getAttendanceByDate(
         @RequestParam String date) {
-    return attendanceRecordRepository.findByDate(date);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByDate(date);
+    attendanceMetricsService.synchronizeMissedMinutes(records);
+    return records;
+}
+
+private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
+    if (employeeRef == null || employeeRef.isBlank()) {
+        return Optional.empty();
+    }
+
+    String normalized = employeeRef.trim();
+    try {
+        return employeeRepository.findById(Long.parseLong(normalized));
+    } catch (NumberFormatException ignored) {
+        // Continue with employee-code lookup.
+    }
+
+    Optional<Employee> byCode = employeeRepository.findByEmployeeCode(normalized.toUpperCase());
+    if (byCode.isPresent()) {
+        return byCode;
+    }
+
+    Matcher matcher = Pattern.compile("(?i)(?:^|\\.)EMP(\\d+)$").matcher(normalized);
+    if (matcher.find()) {
+        try {
+            return employeeRepository.findById(Long.parseLong(matcher.group(1)));
+        } catch (NumberFormatException ignored) {
+            // Keep empty below.
+        }
+    }
+
+    return Optional.empty();
 }
 @GetMapping("/by-date-status-all")
 public List<AttendanceRecord> getAttendanceByDateAndStatusAll(
         @RequestParam String date,
         @RequestParam String attendanceStatus) {
-    return attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
+    attendanceMetricsService.synchronizeMissedMinutes(records);
+    return records;
 }
 // Get all ABSENT employees for a particular date
 @GetMapping("/absent-by-date")
 public List<AttendanceRecord> getAbsentByDate(
         @RequestParam String date) {
-    return attendanceRecordRepository
+    List<AttendanceRecord> records = attendanceRecordRepository
             .findByDateAndAttendanceStatus(date, "Absent");
+    attendanceMetricsService.synchronizeMissedMinutes(records);
+    return records;
 }
 
 

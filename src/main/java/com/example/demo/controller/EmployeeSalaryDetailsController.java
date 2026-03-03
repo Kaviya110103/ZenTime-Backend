@@ -7,6 +7,7 @@ import com.example.demo.repo.EmployeeSalaryDetailsRepository;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Optional;
@@ -27,8 +28,9 @@ public class EmployeeSalaryDetailsController {
     private EmployeeRepository employeeRepository;
 
     @PostMapping("/calculate")
-    public ResponseEntity<EmployeeSalaryDetails> calculateNetSalary(
+    public ResponseEntity<?> calculateNetSalary(
             @RequestParam String employeeId,
+            @RequestParam(value = "clientId", required = false) Long clientId,
             @RequestParam String position,
             @RequestParam String branch,
             @RequestParam Double salary,
@@ -39,9 +41,9 @@ public class EmployeeSalaryDetailsController {
             @RequestParam(required = false, defaultValue = "0") Double advance,
             @RequestParam(required = false, defaultValue = "0") Double others
     ) {
-        Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId);
+        Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId, clientId);
         if (employeeOpt.isEmpty()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
         Long resolvedEmployeeId = employeeOpt.get().getId();
 
@@ -72,7 +74,7 @@ public class EmployeeSalaryDetailsController {
         return ResponseEntity.ok(details);
     }
 
-    private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
+    private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientId) {
         if (employeeRef == null || employeeRef.isBlank()) {
             return Optional.empty();
         }
@@ -80,20 +82,27 @@ public class EmployeeSalaryDetailsController {
         String normalized = employeeRef.trim();
 
         try {
-            return employeeRepository.findById(Long.parseLong(normalized));
+            Long id = Long.parseLong(normalized);
+            return clientId == null
+                    ? employeeRepository.findById(id)
+                    : employeeRepository.findByIdAndClientId(id, clientId);
         } catch (NumberFormatException ignored) {
             // Continue with employee-code lookup.
         }
 
         Optional<Employee> byCode = employeeRepository.findByEmployeeCode(normalized.toUpperCase());
-        if (byCode.isPresent()) {
+        if (byCode.isPresent()
+                && (clientId == null || clientId.equals(byCode.get().getClientId()))) {
             return byCode;
         }
 
         Matcher matcher = Pattern.compile("(?i)(?:^|\\.)EMP(\\d+)$").matcher(normalized);
         if (matcher.find()) {
             try {
-                return employeeRepository.findById(Long.parseLong(matcher.group(1)));
+                Long id = Long.parseLong(matcher.group(1));
+                return clientId == null
+                        ? employeeRepository.findById(id)
+                        : employeeRepository.findByIdAndClientId(id, clientId);
             } catch (NumberFormatException ignored) {
                 // Keep empty below.
             }

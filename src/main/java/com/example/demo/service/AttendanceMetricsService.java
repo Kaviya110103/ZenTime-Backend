@@ -68,6 +68,40 @@ public class AttendanceMetricsService {
         return calculateDailyLateMinutes(record) + calculateDailyEarlyOutMinutes(record);
     }
 
+    public int synchronizeMissedMinutes(AttendanceRecord record) {
+        if (record == null) {
+            return 0;
+        }
+        int recalculated = calculateDailyMissedMinutes(record);
+        Integer current = record.getMissedTimes();
+        if (current == null || current != recalculated) {
+            record.setMissedtimes(recalculated);
+            attendanceRecordRepository.save(record);
+        }
+        return recalculated;
+    }
+
+    public void synchronizeMissedMinutes(List<AttendanceRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (AttendanceRecord record : records) {
+            if (record == null) {
+                continue;
+            }
+            int recalculated = calculateDailyMissedMinutes(record);
+            Integer current = record.getMissedTimes();
+            if (current == null || current != recalculated) {
+                record.setMissedtimes(recalculated);
+                changed = true;
+            }
+        }
+        if (changed) {
+            attendanceRecordRepository.saveAll(records);
+        }
+    }
+
     public MonthlyMetrics calculateMonthlyMetrics(Long employeeId, int month, int year) {
         Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
         if (employeeOpt.isEmpty()) {
