@@ -28,6 +28,7 @@ import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LocationRepository;
 import com.example.demo.repo.LocationRequestRepository;
+import com.example.demo.service.TenantDatabaseProvisioningService;
 
 @RestController
 @RequestMapping("/api/location-requests")
@@ -39,15 +40,18 @@ public class LocationRequestController {
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final LocationRepository locationRepository;
+    private final TenantDatabaseProvisioningService tenantDatabaseProvisioningService;
 
     public LocationRequestController(LocationRequestRepository locationRequestRepository,
                                      EmployeeRepository employeeRepository,
                                      AttendanceRecordRepository attendanceRecordRepository,
-                                     LocationRepository locationRepository) {
+                                     LocationRepository locationRepository,
+                                     TenantDatabaseProvisioningService tenantDatabaseProvisioningService) {
         this.locationRequestRepository = locationRequestRepository;
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.locationRepository = locationRepository;
+        this.tenantDatabaseProvisioningService = tenantDatabaseProvisioningService;
     }
 
     @PostMapping("/submit")
@@ -67,6 +71,7 @@ public class LocationRequestController {
         Employee employee = employeeOpt.get();
 
         Long effectiveClientId = clientId != null ? clientId : employee.getClientId();
+        ensureLocationRequestTableExistsForEmployee(employee);
         boolean insideAssignedLocation = isInsideAssignedLocation(body.latitude, body.longitude, effectiveClientId);
         if (insideAssignedLocation) {
             return ResponseEntity.badRequest().body(Map.of("message", "Employee is inside assigned location. Request is not required."));
@@ -216,6 +221,22 @@ public class LocationRequestController {
         return 6371000.0 * c;
     }
 
+    private void ensureLocationRequestTableExistsForEmployee(Employee employee) {
+        if (employee == null || employee.getCompanyCode() == null || employee.getCompanyCode().isBlank()) {
+            return;
+        }
+
+        String companyCode = employee.getCompanyCode().trim().toLowerCase();
+        String tenantDbName = tenantDatabaseProvisioningService.buildTenantDatabaseName(companyCode);
+
+        boolean hasTable = tenantDatabaseProvisioningService.hasRequiredTables(
+                tenantDbName,
+                java.util.Set.of("location_requests"));
+        if (!hasTable) {
+            tenantDatabaseProvisioningService.provisionTenantDatabase(companyCode);
+        }
+    }
+
     public static class SubmitLocationRequest {
         public Long employeeId;
         public Double latitude;
@@ -224,4 +245,3 @@ public class LocationRequestController {
         public String reason;
     }
 }
-

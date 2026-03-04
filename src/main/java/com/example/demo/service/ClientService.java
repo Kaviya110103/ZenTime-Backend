@@ -15,7 +15,8 @@ public class ClientService {
             "employee",
             "attendance_record",
             "leave_permission",
-            "locations"
+            "locations",
+            "location_requests"
     );
 
     private final ClientRepository repo;
