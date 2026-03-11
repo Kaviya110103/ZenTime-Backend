@@ -43,11 +43,27 @@ public class AttendanceRecordControllerFillter {
     @Autowired
     private EmployeeRepository employeeRepository;
 
+    private void safeSyncRecords(List<AttendanceRecord> records) {
+        try {
+            attendanceMetricsService.synchronizeMissedMinutes(records);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void safeSyncRecord(AttendanceRecord record) {
+        try {
+            attendanceMetricsService.synchronizeMissedMinutes(record);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
     // 1. Get all attendance details
     @GetMapping("/all")
     public List<AttendanceRecord> getAllAttendanceRecords() {
         List<AttendanceRecord> records = attendanceRecordRepository.findAll();
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
 
@@ -59,7 +75,7 @@ public class AttendanceRecordControllerFillter {
             return List.of();
         }
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId());
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
 
@@ -76,7 +92,7 @@ public class AttendanceRecordControllerFillter {
         String monthPattern = String.format("/%02d/%d", month, year);
         List<AttendanceRecord> records =
                 attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employee.get().getId(), monthPattern);
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
 
@@ -138,7 +154,7 @@ public class AttendanceRecordControllerFillter {
         }
 
         AttendanceRecord record = recordOpt.get();
-        attendanceMetricsService.synchronizeMissedMinutes(record);
+        safeSyncRecord(record);
         return ResponseEntity.ok(record);
     }
 
@@ -146,7 +162,7 @@ public class AttendanceRecordControllerFillter {
     @GetMapping("/by-branch")
     public List<AttendanceRecord> getAttendanceByBranch(@RequestParam String branch) {
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeBranch(branch);
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
 
@@ -158,7 +174,7 @@ public class AttendanceRecordControllerFillter {
             @RequestParam String date) {
         String monthPattern = String.format("/%02d/%d", month, year);
         List<AttendanceRecord> records = attendanceRecordRepository.findByMonthPatternAndDate(monthPattern, date);
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
 
@@ -168,7 +184,7 @@ public class AttendanceRecordControllerFillter {
             @RequestParam String date,
             @RequestParam String attendanceStatus) {
         List<AttendanceRecord> records = attendanceRecordRepository.findByDateAndAttendanceStatus(date, attendanceStatus);
-        attendanceMetricsService.synchronizeMissedMinutes(records);
+        safeSyncRecords(records);
         return records;
     }
     @GetMapping("/branches")
@@ -222,32 +238,32 @@ public ResponseEntity<?> uploadBothImagesForAll(@RequestParam("file") MultipartF
 }
 
 @GetMapping("/by-status-month")
-public List<AttendanceRecord> getAttendanceByStatusAndMonth(
-        @RequestParam String attendanceStatus,
-        @RequestParam int month,
-        @RequestParam int year) {
-    String monthPattern = String.format("/%02d/%d", month, year);
-    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
-    attendanceMetricsService.synchronizeMissedMinutes(records);
-    return records;
-}
+    public List<AttendanceRecord> getAttendanceByStatusAndMonth(
+            @RequestParam String attendanceStatus,
+            @RequestParam int month,
+            @RequestParam int year) {
+        String monthPattern = String.format("/%02d/%d", month, year);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
+        safeSyncRecords(records);
+        return records;
+    }
 
 @GetMapping("/by-month-status-branch")
-public List<AttendanceRecord> getAttendanceByMonthStatusBranch(
-        @RequestParam int month,
-        @RequestParam int year,
-        @RequestParam String attendanceStatus,
-        @RequestParam String branch) {
-    String monthPattern = String.format("/%02d/%d", month, year);
-    List<AttendanceRecord> records = attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
-    attendanceMetricsService.synchronizeMissedMinutes(records);
-    return records;
-}
+    public List<AttendanceRecord> getAttendanceByMonthStatusBranch(
+            @RequestParam int month,
+            @RequestParam int year,
+            @RequestParam String attendanceStatus,
+            @RequestParam String branch) {
+        String monthPattern = String.format("/%02d/%d", month, year);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
+        safeSyncRecords(records);
+        return records;
+    }
 
 
 
 @GetMapping("/check-today-attendance")
-public ResponseEntity<?> checkTodayAttendance(@RequestParam String employeeId) {
+    public ResponseEntity<?> checkTodayAttendance(@RequestParam String employeeId) {
     Optional<Employee> employee = resolveEmployeeByRef(employeeId);
     if (employee.isEmpty()) {
         return ResponseEntity.ok("Employee not found.");
@@ -284,7 +300,7 @@ public ResponseEntity<?> checkTodayAttendance(@RequestParam String employeeId) {
 public List<AttendanceRecord> getAttendanceByDate(
         @RequestParam String date) {
     List<AttendanceRecord> records = attendanceRecordRepository.findByDate(date);
-    attendanceMetricsService.synchronizeMissedMinutes(records);
+    safeSyncRecords(records);
     return records;
 }
 

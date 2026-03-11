@@ -76,7 +76,11 @@ public class AttendanceMetricsService {
         Integer current = record.getMissedTimes();
         if (current == null || current != recalculated) {
             record.setMissedtimes(recalculated);
-            attendanceRecordRepository.save(record);
+            try {
+                attendanceRecordRepository.save(record);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         }
         return recalculated;
     }
@@ -98,7 +102,11 @@ public class AttendanceMetricsService {
             }
         }
         if (changed) {
-            attendanceRecordRepository.saveAll(records);
+            try {
+                attendanceRecordRepository.saveAll(records);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         }
     }
 

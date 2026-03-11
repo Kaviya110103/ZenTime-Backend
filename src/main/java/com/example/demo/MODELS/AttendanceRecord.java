@@ -4,6 +4,7 @@ package com.example.demo.MODELS;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -29,11 +30,13 @@ public class AttendanceRecord {
     private LocalDateTime timeIn;
 
     @Lob
+    @JsonIgnore
     private byte[] imageIn; // Store image as byte array (consider cloud storage for production)
 
     private LocalDateTime timeOut;
 
     @Lob
+    @JsonIgnore
     private byte[] imageOut; // Store image as byte array (consider cloud storage for production)
 
     private String dayStatus; // "Completed"
@@ -217,6 +220,7 @@ public class AttendanceRecord {
         this.employee = employee;
     }
 
+    @JsonIgnore
     @OneToMany(mappedBy = "attendanceRecord", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<LeavePermission> leavePermissions;
     public String getTimoutReason() {

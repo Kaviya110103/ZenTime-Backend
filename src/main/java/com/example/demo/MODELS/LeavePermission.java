@@ -3,6 +3,7 @@ package com.example.demo.MODELS;
 
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 
 @Entity
@@ -21,6 +22,7 @@ public class LeavePermission {
 
 //        @Column(name = "missed_times")
 // private Integer missedTimes;
+    @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "attendance_record_id")
     private AttendanceRecord attendanceRecord;
