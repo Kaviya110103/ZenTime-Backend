@@ -14,6 +14,7 @@ import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
 import com.example.demo.service.AttendanceMetricsService;
+import com.example.demo.service.PushNotificationService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -41,6 +42,8 @@ public class LeavePermissionController {
     @Autowired
     private AttendanceMetricsService attendanceMetricsService;
 
+    @Autowired
+    private PushNotificationService pushNotificationService;
 
     // ✅ 1. POST Leave Permission
 @PostMapping("/create")
@@ -100,47 +103,47 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
 
     if ("approved".equals(newStatus) && "Permission".equalsIgnoreCase(leave.getLeaveType())) {
         int permissionMinutes = attendanceMetricsService.calculatePermissionDurationMinutes(leave);
-        if (permissionMinutes <= 0) {
-            return ResponseEntity.badRequest()
-                    .body("Invalid permission time range. Please provide valid startTime and endTime.");
-        }
-
         LocalDate permissionDate = resolvePermissionMonthDate(leave);
-        if (permissionDate == null) {
-            return ResponseEntity.badRequest().body("Invalid permission date.");
-        }
 
-        AttendanceMetricsService.PermissionUsage usage =
-                attendanceMetricsService.getApprovedPermissionUsage(
-                        leave.getEmployee().getId(),
-                        permissionDate.getMonthValue(),
-                        permissionDate.getYear(),
-                        leave.getId());
+        if (permissionMinutes > 0 && permissionDate != null) {
+            AttendanceMetricsService.PermissionUsage usage =
+                    attendanceMetricsService.getApprovedPermissionUsage(
+                            leave.getEmployee().getId(),
+                            permissionDate.getMonthValue(),
+                            permissionDate.getYear(),
+                            leave.getId());
 
-        int finalCount = usage.approvedPermissionCount() + 1;
-        int finalMinutes = usage.approvedPermissionMinutes() + permissionMinutes;
-        if (finalCount > AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH) {
-            return ResponseEntity.badRequest().body(
-                    "Approval limit exceeded: maximum "
-                            + AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH
-                            + " approved permissions per month.");
-        }
-        if (finalMinutes > AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH) {
-            return ResponseEntity.badRequest().body(
-                    "Approval limit exceeded: maximum "
-                            + AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH
-                            + " approved permission minutes per month.");
+            int finalCount = usage.approvedPermissionCount() + 1;
+            int finalMinutes = usage.approvedPermissionMinutes() + permissionMinutes;
+            if (finalCount > AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH) {
+                return ResponseEntity.badRequest().body(
+                        "Approval limit exceeded: maximum "
+                                + AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH
+                                + " approved permissions per month.");
+            }
+            if (finalMinutes > AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH) {
+                return ResponseEntity.badRequest().body(
+                        "Approval limit exceeded: maximum "
+                                + AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH
+                                + " approved permission minutes per month.");
+            }
         }
     }
 
     leave.setStatus(newStatus);
     leavePermissionRepository.save(leave);
+    pushNotificationService.notifyLeaveStatus(leave);
 
     Long employeeId = leave.getEmployee().getId();
 
     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
-    LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
+    Optional<LocalDate> startOpt = parseLeaveDate(leave.getStartDate(), formatter);
+    Optional<LocalDate> endOpt = parseLeaveDate(leave.getEndDate(), formatter);
+    if (startOpt.isEmpty() || endOpt.isEmpty()) {
+        return ResponseEntity.ok("Leave status updated to " + newStatus);
+    }
+    LocalDate start = startOpt.get();
+    LocalDate end = endOpt.get();
 
     for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
         String formattedDate = date.format(formatter);
@@ -232,6 +235,17 @@ public ResponseEntity<Long> countLeavesByStatus(
             return LocalDate.parse(dateRaw, formatter);
         } catch (DateTimeParseException ex) {
             return null;
+        }
+    }
+
+    private Optional<LocalDate> parseLeaveDate(String rawDate, DateTimeFormatter formatter) {
+        if (rawDate == null || rawDate.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(LocalDate.parse(rawDate.trim(), formatter));
+        } catch (DateTimeParseException ex) {
+            return Optional.empty();
         }
     }
 }

@@ -45,6 +45,7 @@ import com.example.demo.repo.EmployeeNetPaymentRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.service.EmailService;
 import com.example.demo.service.EmployeeService;
+import com.example.demo.service.PushNotificationService;
 import com.example.demo.tenant.TenantContext;
 
 @RestController
@@ -59,17 +60,20 @@ public class EmployeeController {
     private final EmployeeRepository employeeRepository;
     private final JdbcTemplate masterJdbcTemplate;
     private final EmailService emailService;
+    private final PushNotificationService pushNotificationService;
 
     public EmployeeController(PasswordEncoder passwordEncoder, EmployeeService employeeService,
             EmployeeNetPaymentRepository employeeNetPaymentRepository, EmployeeRepository employeeRepository,
             @org.springframework.beans.factory.annotation.Qualifier("masterDataSource") DataSource masterDataSource,
-            EmailService emailService) {
+            EmailService emailService,
+            PushNotificationService pushNotificationService) {
         this.passwordEncoder = passwordEncoder;
         this.employeeService = employeeService;
         this.employeeNetPaymentRepository = employeeNetPaymentRepository;
         this.employeeRepository = employeeRepository;
         this.masterJdbcTemplate = new JdbcTemplate(masterDataSource);
         this.emailService = emailService;
+        this.pushNotificationService = pushNotificationService;
     }
 
     
@@ -424,6 +428,7 @@ public class EmployeeController {
         String username = loginData.get("username");
         String rawPassword = loginData.get("password");
         String companyCode = loginData.get("companyCode");
+        String pushToken = loginData.get("pushToken");
 
         logger.info("Login attempt - Username: {}, companyCode: {}", username, companyCode);
 
@@ -445,6 +450,10 @@ public class EmployeeController {
                 Employee employee = employeeOptional.get();
                 if (passwordEncoder.matches(rawPassword, employee.getPassword())) {
                     logger.info("Login successful for user: {}", username);
+                    if (pushToken != null && !pushToken.isBlank()) {
+                        pushNotificationService.registerToken(employee, pushToken);
+                    }
+                    pushNotificationService.notifyLogin(employee);
                     return ResponseEntity.ok(employee);
                 }
                 logger.warn("Invalid password for user: {}", username);
@@ -456,6 +465,39 @@ public class EmployeeController {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    @PostMapping("/{id}/push-token")
+    public ResponseEntity<Object> registerPushToken(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> payload) {
+        String token = payload.get("token");
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.badRequest().body("token is required");
+        }
+
+        Optional<Employee> employeeOptional = employeeRepository.findById(id);
+        if (employeeOptional.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+        }
+
+        pushNotificationService.registerToken(employeeOptional.get(), token);
+        return ResponseEntity.ok("Token registered");
+    }
+
+    @PostMapping("/{id}/push-test")
+    public ResponseEntity<Object> sendTestPush(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, String> payload) {
+        Optional<Employee> employeeOptional = employeeRepository.findById(id);
+        if (employeeOptional.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+        }
+
+        String title = payload == null ? null : payload.get("title");
+        String body = payload == null ? null : payload.get("body");
+        pushNotificationService.sendTest(employeeOptional.get(), title, body);
+        return ResponseEntity.ok("Test push sent");
     }
 
     // Upload image

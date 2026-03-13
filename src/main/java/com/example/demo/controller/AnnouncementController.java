@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.example.demo.MODELS.Announcement;
 import com.example.demo.repo.AnnouncementRepository;
+import com.example.demo.service.PushNotificationService;
 
 @RestController
 @CrossOrigin(origins = "*")
@@ -30,11 +31,15 @@ public class AnnouncementController {
     @Autowired
     private AnnouncementRepository announcementRepository;
 
+    @Autowired
+    private PushNotificationService pushNotificationService;
+
     // POST - Create Announcement (Admin only)
     @PostMapping
     public ResponseEntity<Announcement> createAnnouncement(@RequestBody Announcement announcement) {
         announcement.setPostedDate(LocalDate.now());
         Announcement saved = announcementRepository.save(announcement);
+        pushNotificationService.notifyAnnouncement(saved);
         return ResponseEntity.ok(saved);
     }
 
