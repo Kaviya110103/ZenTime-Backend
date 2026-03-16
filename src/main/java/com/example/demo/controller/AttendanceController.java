@@ -6,6 +6,7 @@ import com.example.demo.MODELS.DateUtil;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.MODELS.Location;
+import com.example.demo.MODELS.PublicHoliday;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
@@ -13,6 +14,7 @@ import com.example.demo.repo.LocationRepository;
 import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
+import com.example.demo.service.PublicHolidayService;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -64,6 +66,8 @@ private LocationRepository locationRepository;
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    @Autowired
+    private PublicHolidayService publicHolidayService;
 @PutMapping("/start-day")
 public ResponseEntity<?> startDay(@RequestParam Long employeeId,
                                   @RequestParam String location,
@@ -80,8 +84,15 @@ public ResponseEntity<?> startDay(@RequestParam Long employeeId,
     }
     Employee employee = employeeOptional.get();
 
+    Long effectiveClientId = clientId != null ? clientId : employee.getClientId();
+    PublicHoliday holiday = publicHolidayService.getHoliday(effectiveClientId, LocalDate.now()).orElse(null);
+    if (holiday != null) {
+        ensureHolidayRecord(employee, holiday, todayDate);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body("Today is a public holiday: " + holiday.getHolidayName() + ". Attendance is disabled.");
+    }
+
     if (latitude != null && longitude != null) {
-        Long effectiveClientId = clientId != null ? clientId : employee.getClientId();
         if (!isInsideAnyBranchLocation(latitude, longitude, effectiveClientId)) {
             Map<String, Object> inactive = new HashMap<>();
             inactive.put("status", "Inactive");
@@ -506,6 +517,16 @@ public ResponseEntity<?> autoMarkAbsentForMissedAttendance() {
     int absentCount = 0;
 
     for (Employee employee : allEmployees) {
+        if (employee.getClientId() != null) {
+            PublicHoliday holiday = publicHolidayService
+                    .getHoliday(employee.getClientId(), LocalDate.now())
+                    .orElse(null);
+            if (holiday != null) {
+                ensureHolidayRecord(employee, holiday, todayDate);
+                continue;
+            }
+        }
+
         List<AttendanceRecord> attendanceRecords =
             attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), todayDate);
 
@@ -560,9 +581,21 @@ public ResponseEntity<?> autoMarkAbsentForMissedAttendance() {
      if (employeeOptional.isEmpty()) {
          return ResponseEntity.badRequest().body("Employee not found.");
      }
+
+     Employee employee = employeeOptional.get();
+     if (employee.getClientId() != null) {
+         PublicHoliday holiday = publicHolidayService
+                 .getHoliday(employee.getClientId(), LocalDate.now())
+                 .orElse(null);
+         if (holiday != null) {
+             ensureHolidayRecord(employee, holiday, todayDate);
+             return ResponseEntity.status(HttpStatus.CONFLICT)
+                     .body("Today is a public holiday: " + holiday.getHolidayName() + ".");
+         }
+     }
  
      AttendanceRecord attendanceRecord = new AttendanceRecord();
-     attendanceRecord.setEmployee(employeeOptional.get());
+     attendanceRecord.setEmployee(employee);
      attendanceRecord.setAttendanceStatus("Absent");
      attendanceRecord.setDate(todayDate);
  
@@ -996,6 +1029,23 @@ private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientI
     }
 
     return Optional.empty();
+}
+
+private void ensureHolidayRecord(Employee employee, PublicHoliday holiday, String todayDate) {
+    if (employee == null || holiday == null) {
+        return;
+    }
+    List<AttendanceRecord> existing = attendanceRecordRepository
+            .findByEmployeeIdAndDate(employee.getId(), todayDate);
+    if (!existing.isEmpty()) {
+        return;
+    }
+    AttendanceRecord holidayRecord = new AttendanceRecord();
+    holidayRecord.setEmployee(employee);
+    holidayRecord.setAttendanceStatus("Holiday");
+    holidayRecord.setDayStatus(publicHolidayService.buildDayStatus(holiday));
+    holidayRecord.setDate(todayDate);
+    attendanceRecordRepository.save(holidayRecord);
 }
 
 

@@ -24,10 +24,12 @@ import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.Location;
 import com.example.demo.MODELS.LocationRequest;
+import com.example.demo.MODELS.PublicHoliday;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LocationRepository;
 import com.example.demo.repo.LocationRequestRepository;
+import com.example.demo.service.PublicHolidayService;
 import com.example.demo.service.TenantDatabaseProvisioningService;
 
 @RestController
@@ -41,17 +43,20 @@ public class LocationRequestController {
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final LocationRepository locationRepository;
     private final TenantDatabaseProvisioningService tenantDatabaseProvisioningService;
+    private final PublicHolidayService publicHolidayService;
 
     public LocationRequestController(LocationRequestRepository locationRequestRepository,
                                      EmployeeRepository employeeRepository,
                                      AttendanceRecordRepository attendanceRecordRepository,
                                      LocationRepository locationRepository,
-                                     TenantDatabaseProvisioningService tenantDatabaseProvisioningService) {
+                                     TenantDatabaseProvisioningService tenantDatabaseProvisioningService,
+                                     PublicHolidayService publicHolidayService) {
         this.locationRequestRepository = locationRequestRepository;
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.locationRepository = locationRepository;
         this.tenantDatabaseProvisioningService = tenantDatabaseProvisioningService;
+        this.publicHolidayService = publicHolidayService;
     }
 
     @PostMapping("/submit")
@@ -71,6 +76,11 @@ public class LocationRequestController {
         Employee employee = employeeOpt.get();
 
         Long effectiveClientId = clientId != null ? clientId : employee.getClientId();
+        PublicHoliday holiday = publicHolidayService.getHoliday(effectiveClientId, LocalDate.now()).orElse(null);
+        if (holiday != null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "Today is a public holiday: " + holiday.getHolidayName() + "."));
+        }
         ensureLocationRequestTableExistsForEmployee(employee);
         boolean insideAssignedLocation = isInsideAssignedLocation(body.latitude, body.longitude, effectiveClientId);
         if (insideAssignedLocation) {

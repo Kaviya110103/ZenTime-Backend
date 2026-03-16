@@ -1,6 +1,5 @@
 package com.example.demo.service;
 
-
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -12,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
+import com.example.demo.MODELS.PublicHoliday;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
@@ -28,9 +28,27 @@ public class AttendanceSchedulerService {
     @Autowired
     private LeavePermissionRepository leavePermissionRepository;
 
+    @Autowired
+    private PublicHolidayService publicHolidayService;
+
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-   // 🕐 Scheduled to run every day at 3:00 PM
+   // ðŸ• Scheduled to run every day at 12:05 AM
+@Scheduled(cron = "0 5 0 * * ?")
+public void autoMarkHolidays() {
+    LocalDate today = LocalDate.now();
+    String todayDate = today.format(formatter);
+
+    List<PublicHoliday> holidaysToday = publicHolidayService.getHolidaysByDate(today);
+    for (PublicHoliday holiday : holidaysToday) {
+        List<Employee> employees = employeeRepository.findByClientId(holiday.getClientId());
+        for (Employee employee : employees) {
+            ensureHolidayRecord(employee, holiday, todayDate);
+        }
+    }
+}
+
+   // ðŸ• Scheduled to run every day at 3:00 PM
 @Scheduled(cron = "0 0 15 * * ?")
 public void autoMarkAbsentAt3PM() {
     String todayDate = LocalDate.now().format(formatter);
@@ -39,6 +57,16 @@ public void autoMarkAbsentAt3PM() {
     int absentCount = 0;
 
     for (Employee employee : allEmployees) {
+        if (employee.getClientId() != null) {
+            PublicHoliday holiday = publicHolidayService
+                    .getHoliday(employee.getClientId(), LocalDate.now())
+                    .orElse(null);
+            if (holiday != null) {
+                ensureHolidayRecord(employee, holiday, todayDate);
+                continue;
+            }
+        }
+
         List<AttendanceRecord> attendanceRecords =
                 attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), todayDate);
 
@@ -70,6 +98,23 @@ public void autoMarkAbsentAt3PM() {
     }
 
     System.out.println(absentCount + " employees auto-marked as Absent at 3:00 PM.");
+}
+
+private void ensureHolidayRecord(Employee employee, PublicHoliday holiday, String todayDate) {
+    if (employee == null || holiday == null) {
+        return;
+    }
+    List<AttendanceRecord> existingRecords =
+            attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), todayDate);
+    if (!existingRecords.isEmpty()) {
+        return;
+    }
+    AttendanceRecord holidayRecord = new AttendanceRecord();
+    holidayRecord.setEmployee(employee);
+    holidayRecord.setAttendanceStatus("Holiday");
+    holidayRecord.setDayStatus(publicHolidayService.buildDayStatus(holiday));
+    holidayRecord.setDate(todayDate);
+    attendanceRecordRepository.save(holidayRecord);
 }
 
 }

@@ -10,10 +10,12 @@ import org.springframework.web.bind.annotation.*;
 import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
+import com.example.demo.MODELS.PublicHoliday;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
 import com.example.demo.service.AttendanceMetricsService;
+import com.example.demo.service.PublicHolidayService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -40,6 +42,9 @@ public class LeavePermissionController {
 
     @Autowired
     private AttendanceMetricsService attendanceMetricsService;
+
+    @Autowired
+    private PublicHolidayService publicHolidayService;
 
 
     // ✅ 1. POST Leave Permission
@@ -142,14 +147,20 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
     LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
     LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
 
-    for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-        String formattedDate = date.format(formatter);
-        List<AttendanceRecord> existingRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, formattedDate);
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            String formattedDate = date.format(formatter);
+            List<AttendanceRecord> existingRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, formattedDate);
 
-        if ("approved".equals(newStatus)) {
-            if (existingRecords.isEmpty()) {
-                AttendanceRecord attendance = new AttendanceRecord();
-                attendance.setEmployee(leave.getEmployee());
+            if ("approved".equals(newStatus)) {
+                PublicHoliday holiday = publicHolidayService
+                        .getHoliday(leave.getEmployee().getClientId(), date)
+                        .orElse(null);
+                if (holiday != null) {
+                    continue;
+                }
+                if (existingRecords.isEmpty()) {
+                    AttendanceRecord attendance = new AttendanceRecord();
+                    attendance.setEmployee(leave.getEmployee());
                 attendance.setDate(formattedDate);
                 attendance.setAttendanceStatus("Absent");
                 attendance.setDayStatus("Leave Approved - Absent");
