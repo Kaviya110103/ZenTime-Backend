@@ -20,6 +20,11 @@ public class EmployeeSalaryDetails {
     private Double advance = 0.0;
     
     private Double others = 0.0;
+    private Double pfAmount = 0.0;
+    private Double pfPercentage = 0.0;
+    private Double additionalAllowancesTotal = 0.0;
+    @Column(columnDefinition = "TEXT")
+    private String additionalAllowancesJson;
     private Double netSalary = 0.0;
 
     // Getters and setters
@@ -44,6 +49,14 @@ public class EmployeeSalaryDetails {
     public void setAdvance(Double advance) { this.advance = advance; }
     public Double getOthers() { return others; }
     public void setOthers(Double others) { this.others = others; }
+    public Double getPfAmount() { return pfAmount; }
+    public void setPfAmount(Double pfAmount) { this.pfAmount = pfAmount; }
+    public Double getPfPercentage() { return pfPercentage; }
+    public void setPfPercentage(Double pfPercentage) { this.pfPercentage = pfPercentage; }
+    public Double getAdditionalAllowancesTotal() { return additionalAllowancesTotal; }
+    public void setAdditionalAllowancesTotal(Double additionalAllowancesTotal) { this.additionalAllowancesTotal = additionalAllowancesTotal; }
+    public String getAdditionalAllowancesJson() { return additionalAllowancesJson; }
+    public void setAdditionalAllowancesJson(String additionalAllowancesJson) { this.additionalAllowancesJson = additionalAllowancesJson; }
     public Double getNetSalary() { return netSalary; }
     public void setNetSalary(Double netSalary) { this.netSalary = netSalary; }
     

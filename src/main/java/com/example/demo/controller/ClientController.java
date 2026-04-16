@@ -28,7 +28,7 @@ import com.example.demo.service.EmailService;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping(value = "/api/clients", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/clients", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ClientController {
 
     private final ClientService clientService;
@@ -101,7 +101,7 @@ public class ClientController {
         public String getProvisioningStatus() { return provisioningStatus; }
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createClient(@Valid @RequestBody Client client) {
         if (client.getUsername() == null || client.getUsername().isBlank()) {
             return ResponseEntity.badRequest().build();
@@ -187,7 +187,7 @@ public class ClientController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PutMapping("/{id:\\d+}")
+    @PutMapping(path = "/{id:\\d+}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> updateClient(@PathVariable Long id, @Valid @RequestBody Client client) {
         try {
             Client updated = clientService.update(id, client);

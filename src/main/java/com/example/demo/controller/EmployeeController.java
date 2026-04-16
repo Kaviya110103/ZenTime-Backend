@@ -61,12 +61,14 @@ public class EmployeeController {
     private final JdbcTemplate masterJdbcTemplate;
     private final EmailService emailService;
     private final PushNotificationService pushNotificationService;
+    private final com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService;
 
     public EmployeeController(PasswordEncoder passwordEncoder, EmployeeService employeeService,
             EmployeeNetPaymentRepository employeeNetPaymentRepository, EmployeeRepository employeeRepository,
             @org.springframework.beans.factory.annotation.Qualifier("masterDataSource") DataSource masterDataSource,
             EmailService emailService,
-            PushNotificationService pushNotificationService) {
+            PushNotificationService pushNotificationService,
+            com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService) {
         this.passwordEncoder = passwordEncoder;
         this.employeeService = employeeService;
         this.employeeNetPaymentRepository = employeeNetPaymentRepository;
@@ -74,6 +76,7 @@ public class EmployeeController {
         this.masterJdbcTemplate = new JdbcTemplate(masterDataSource);
         this.emailService = emailService;
         this.pushNotificationService = pushNotificationService;
+        this.schemaMaintenanceService = schemaMaintenanceService;
     }
 
     
@@ -283,6 +286,8 @@ public class EmployeeController {
         existingEmployee.setWeekOff(updatedEmployeeData.getWeekOff());
         existingEmployee.setShiftStartTime(updatedEmployeeData.getShiftStartTime());
         existingEmployee.setShiftEndTime(updatedEmployeeData.getShiftEndTime());
+        existingEmployee.setLeavePolicyType(updatedEmployeeData.getLeavePolicyType());
+        existingEmployee.setCasualLeaveBalance(updatedEmployeeData.getCasualLeaveBalance());
 
         String companyCode = updatedEmployeeData.getCompanyCode();
         try {
@@ -309,6 +314,18 @@ public class EmployeeController {
         }
 
         existingEmployee.setEmployeeCode(finalEmployeeCode);
+
+        if (updatedEmployeeData.getAdditionalWorkingDays() != null) {
+            if (existingEmployee.getAdditionalWorkingDays() == null) {
+                existingEmployee.setAdditionalWorkingDays(new java.util.ArrayList<>());
+            } else {
+                existingEmployee.getAdditionalWorkingDays().clear();
+            }
+            for (com.example.demo.MODELS.EmployeeAdditionalWorkingDay day : updatedEmployeeData.getAdditionalWorkingDays()) {
+                day.setEmployee(existingEmployee);
+                existingEmployee.getAdditionalWorkingDays().add(day);
+            }
+        }
 
         employeeRepository.save(existingEmployee);
         return ResponseEntity.ok(existingEmployee);
@@ -440,6 +457,7 @@ public class EmployeeController {
             );
             if (!tenantRows.isEmpty() && tenantRows.get(0) != null && !tenantRows.get(0).isBlank()) {
                 TenantContext.setTenantDb(tenantRows.get(0));
+                schemaMaintenanceService.ensureEmployeeSchema();
             }
         }
 

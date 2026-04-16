@@ -11,7 +11,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -33,8 +36,24 @@ public class AttendanceService {
     
     
 public List<AttendanceRecord> getTodayAbsentRecords() {
-    String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    return attendanceRepo.findTodayAbsent(today);
+    LocalDate today = LocalDate.now();
+    List<String> dateCandidates = List.of(
+            today.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+            today.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+            today.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+    );
+
+    Map<Long, AttendanceRecord> unique = new LinkedHashMap<>();
+    for (String dateValue : dateCandidates) {
+        List<AttendanceRecord> records = attendanceRepo.findByDateAndAttendanceStatus(dateValue, "Absent");
+        for (AttendanceRecord record : records) {
+            if (record != null && record.getId() != null) {
+                unique.putIfAbsent(record.getId(), record);
+            }
+        }
+    }
+
+    return new ArrayList<>(unique.values());
 }
 
 

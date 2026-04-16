@@ -4,13 +4,18 @@ import com.example.demo.MODELS.EmployeeSalaryDetails;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.EmployeeSalaryDetailsRepository;
+import com.example.demo.service.SchemaMaintenanceService;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.Optional;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +32,11 @@ public class EmployeeSalaryDetailsController {
     @Autowired
     private EmployeeRepository employeeRepository;
 
+    @Autowired
+    private SchemaMaintenanceService schemaMaintenanceService;
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     @PostMapping("/calculate")
     public ResponseEntity<?> calculateNetSalary(
             @RequestParam String employeeId,
@@ -39,13 +49,23 @@ public class EmployeeSalaryDetailsController {
             @RequestParam(required = false, defaultValue = "0") Double overTime,
             @RequestParam(required = false, defaultValue = "0") Double lossOfPay,
             @RequestParam(required = false, defaultValue = "0") Double advance,
-            @RequestParam(required = false, defaultValue = "0") Double others
+            @RequestParam(required = false, defaultValue = "0") Double others,
+            @RequestParam(required = false, defaultValue = "0") Double pfAmount,
+            @RequestParam(required = false, defaultValue = "0") Double pfPercentage,
+            @RequestParam(required = false) String additionalAllowancesJson,
+            @RequestParam(required = false, defaultValue = "0") Double additionalAllowancesTotal
     ) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         Optional<Employee> employeeOpt = resolveEmployeeByRef(employeeId, clientId);
         if (employeeOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
         Long resolvedEmployeeId = employeeOpt.get().getId();
+
+        double resolvedAdditionalTotal = resolveAdditionalAllowancesTotal(
+                additionalAllowancesTotal,
+                additionalAllowancesJson);
+        double resolvedPfAmount = resolvePfAmount(salary, pfAmount, pfPercentage);
 
         EmployeeSalaryDetails details = new EmployeeSalaryDetails();
         details.setEmployeeId(resolvedEmployeeId);
@@ -58,20 +78,68 @@ public class EmployeeSalaryDetailsController {
         details.setLossOfPay(lossOfPay);
         details.setAdvance(advance);
         details.setOthers(others);
+        details.setPfAmount(resolvedPfAmount);
+        details.setPfPercentage(pfPercentage);
+        details.setAdditionalAllowancesTotal(resolvedAdditionalTotal);
+        details.setAdditionalAllowancesJson(additionalAllowancesJson);
 
         // Calculate net salary
         double netSalary = salary
                 + convienceAmount
                 + incentive
                 + overTime
+                + resolvedAdditionalTotal
                 - lossOfPay
                 - advance
-                - others;
+                - others
+                - resolvedPfAmount;
 
         details.setNetSalary(netSalary);
 
         salaryDetailsRepository.save(details);
         return ResponseEntity.ok(details);
+    }
+
+    private double resolveAdditionalAllowancesTotal(Double providedTotal, String json) {
+        double fallback = providedTotal == null ? 0.0 : providedTotal;
+        if (json == null || json.isBlank()) {
+            return fallback;
+        }
+        try {
+            List<Map<String, Object>> items = OBJECT_MAPPER.readValue(
+                    json,
+                    new TypeReference<List<Map<String, Object>>>() {});
+            double total = 0.0;
+            for (Map<String, Object> item : items) {
+                if (item == null) {
+                    continue;
+                }
+                Object amountRaw = item.get("amount");
+                if (amountRaw instanceof Number number) {
+                    total += number.doubleValue();
+                } else if (amountRaw instanceof String text) {
+                    try {
+                        total += Double.parseDouble(text.trim());
+                    } catch (NumberFormatException ignored) {
+                        // Skip invalid amounts.
+                    }
+                }
+            }
+            return total;
+        } catch (Exception ex) {
+            return fallback;
+        }
+    }
+
+    private double resolvePfAmount(Double salary, Double pfAmount, Double pfPercentage) {
+        double baseSalary = salary == null ? 0.0 : salary;
+        if (pfAmount != null && pfAmount > 0) {
+            return pfAmount;
+        }
+        if (pfPercentage != null && pfPercentage > 0) {
+            return Math.round((baseSalary * pfPercentage / 100.0) * 100.0) / 100.0;
+        }
+        return 0.0;
     }
 
     private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientId) {

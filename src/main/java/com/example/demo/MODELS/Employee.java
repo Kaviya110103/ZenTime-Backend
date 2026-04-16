@@ -104,6 +104,12 @@ public class Employee {
     @Column(name = "shift_end_time")
     private String shiftEndTime;
 
+    @Column(name = "leave_policy_type")
+    private String leavePolicyType;
+
+    @Column(name = "casual_leave_balance")
+    private Integer casualLeaveBalance;
+
 @Column(name = "company_code")
     private String companyCode;
 
@@ -394,6 +400,22 @@ private LocalDateTime guestStartDate;
         this.shiftEndTime = shiftEndTime;
     }
 
+    public String getLeavePolicyType() {
+        return leavePolicyType;
+    }
+
+    public void setLeavePolicyType(String leavePolicyType) {
+        this.leavePolicyType = leavePolicyType;
+    }
+
+    public Integer getCasualLeaveBalance() {
+        return casualLeaveBalance;
+    }
+
+    public void setCasualLeaveBalance(Integer casualLeaveBalance) {
+        this.casualLeaveBalance = casualLeaveBalance;
+    }
+
 
     public void setId(Long id) {
         this.id = id;
@@ -410,12 +432,23 @@ private LocalDateTime guestStartDate;
     @OneToMany(mappedBy = "employee", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AttendanceRecord> attendanceRecords;
 
+    @OneToMany(mappedBy = "employee", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<EmployeeAdditionalWorkingDay> additionalWorkingDays;
+
     public List<AttendanceRecord> getAttendanceRecords() {
         return attendanceRecords;
     }
 
     public void setAttendanceRecords(List<AttendanceRecord> attendanceRecords) {
         this.attendanceRecords = attendanceRecords;
+    }
+
+    public List<EmployeeAdditionalWorkingDay> getAdditionalWorkingDays() {
+        return additionalWorkingDays;
+    }
+
+    public void setAdditionalWorkingDays(List<EmployeeAdditionalWorkingDay> additionalWorkingDays) {
+        this.additionalWorkingDays = additionalWorkingDays;
     }
 }
 

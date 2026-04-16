@@ -118,6 +118,7 @@ public class AttendanceMetricsService {
 
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
         int absentCount = 0;
+        int presentCount = 0;
         int monthlyLateMinutes = 0;
         int monthlyEarlyOutMinutes = 0;
         int totalMissedMinutes = 0;
@@ -127,9 +128,12 @@ public class AttendanceMetricsService {
                 continue;
             }
 
-            if (record.getAttendanceStatus() != null
-                    && "Absent".equalsIgnoreCase(record.getAttendanceStatus())) {
-                absentCount++;
+            if (record.getAttendanceStatus() != null) {
+                if ("Absent".equalsIgnoreCase(record.getAttendanceStatus())) {
+                    absentCount++;
+                } else if ("Present".equalsIgnoreCase(record.getAttendanceStatus())) {
+                    presentCount++;
+                }
             }
 
             int lateMinutes = calculateDailyLateMinutes(record);
@@ -145,6 +149,7 @@ public class AttendanceMetricsService {
 
         return new MonthlyMetrics(
                 absentCount,
+                presentCount,
                 monthlyLateMinutes,
                 monthlyEarlyOutMinutes,
                 totalMissedMinutes,
@@ -269,13 +274,14 @@ public class AttendanceMetricsService {
 
     public record MonthlyMetrics(
             int absentCount,
+            int presentCount,
             int monthlyLateMinutes,
             int monthlyEarlyOutMinutes,
             int totalMissedMinutes,
             int approvedPermissionCount,
             int approvedPermissionMinutes) {
         public static MonthlyMetrics empty() {
-            return new MonthlyMetrics(0, 0, 0, 0, 0, 0);
+            return new MonthlyMetrics(0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

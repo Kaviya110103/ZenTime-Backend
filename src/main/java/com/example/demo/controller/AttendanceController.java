@@ -31,6 +31,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,6 +64,8 @@ private LocationRepository locationRepository;
 
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
+    @Autowired
+    private com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 @PutMapping("/start-day")
 public ResponseEntity<?> startDay(@RequestParam Long employeeId,
@@ -152,6 +155,7 @@ private double distanceMeters(double lat1, double lon1, double lat2, double lon2
     
 @PostMapping("/submit-timeout-reason")
 public ResponseEntity<?> submitTimeoutReason(@RequestParam Long recordId, @RequestParam String reason) {
+    schemaMaintenanceService.ensureEmployeeSchema();
     Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
     if (optionalRecord.isPresent()) {
         AttendanceRecord record = optionalRecord.get();
@@ -186,8 +190,10 @@ public List<Map<String, Object>> getMissedTimeoutEmployees(
 @PutMapping("/complete-missed-timeout")
 public ResponseEntity<?> completeMissedTimeout(
         @RequestParam Long attendanceId,
-        @RequestParam String timeOut // Format: "yyyy-MM-dd'T'HH:mm:ss"
+        @RequestParam String timeOut,
+        @RequestParam(required = false) Boolean overtimeApproved // Format: "yyyy-MM-dd'T'HH:mm:ss"
 ) {
+    schemaMaintenanceService.ensureEmployeeSchema();
     Optional<AttendanceRecord> optional = attendanceRecordRepository.findById(attendanceId);
     if (optional.isEmpty()) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found.");
@@ -195,6 +201,9 @@ public ResponseEntity<?> completeMissedTimeout(
     AttendanceRecord record = optional.get();
     record.setDayStatus("Completed");
     record.setTimeOut(LocalDateTime.parse(timeOut));
+    if (overtimeApproved != null) {
+        record.setOvertimeApproved(overtimeApproved);
+    }
     // Automatically calculate and update missed times
     employeeService.updateMissedTimes(record);
     attendanceRecordRepository.save(record);
@@ -265,12 +274,17 @@ public ResponseEntity<String> markTimeIn(
     @PostMapping("/mark-time-out")  // worked
     public ResponseEntity<String> markTimeOut(
             @RequestParam Long recordId,
-            @RequestParam MultipartFile imageOut) {
+            @RequestParam MultipartFile imageOut,
+            @RequestParam(required = false) Boolean overtimeApproved) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
         if (optionalRecord.isPresent()) {
             AttendanceRecord record = optionalRecord.get();
             try {
                 record.setTimeOut(LocalDateTime.now());
+                if (overtimeApproved != null) {
+                    record.setOvertimeApproved(overtimeApproved);
+                }
                 if (imageOut != null && !imageOut.isEmpty()) {
                     record.setImageOut(imageOut.getBytes());
                 }
@@ -845,14 +859,11 @@ public Map<String, Object> getDashboardSummary(
     long totalEmployees = clientId == null ? employeeRepository.count() : employeeRepository.countByClientId(clientId);
     summary.put("totalEmployees", totalEmployees);
 
-    // Formatters
-    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    String todayDate = LocalDate.now().format(formatter);
-    String yesterdayDate = LocalDate.now().minusDays(1).format(formatter);
+    LocalDate today = LocalDate.now();
+    LocalDate yesterday = today.minusDays(1);
 
-    // Fetch attendance records
-    List<AttendanceRecord> todayRecords = attendanceRecordRepository.findByDate(todayDate);
-    List<AttendanceRecord> yesterdayRecords = attendanceRecordRepository.findByDate(yesterdayDate);
+    List<AttendanceRecord> todayRecords = findRecordsByDateFlexible(today);
+    List<AttendanceRecord> yesterdayRecords = findRecordsByDateFlexible(yesterday);
 
     if (clientId != null) {
         todayRecords = todayRecords.stream()
@@ -905,6 +916,27 @@ public Map<String, Object> getDashboardSummary(
     return summary;
 }
 
+private List<AttendanceRecord> findRecordsByDateFlexible(LocalDate date) {
+    if (date == null) {
+        return new ArrayList<>();
+    }
+    List<String> candidates = List.of(
+            date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+            date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+            date.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+    );
+    Map<Long, AttendanceRecord> unique = new LinkedHashMap<>();
+    for (String dateValue : candidates) {
+        List<AttendanceRecord> records = attendanceRecordRepository.findByDate(dateValue);
+        for (AttendanceRecord record : records) {
+            if (record != null && record.getId() != null) {
+                unique.putIfAbsent(record.getId(), record);
+            }
+        }
+    }
+    return new ArrayList<>(unique.values());
+}
+
 private double calculatePercentageChange(long oldValue, long newValue) {
     if (oldValue == 0 && newValue == 0) return 0.0;
     if (oldValue == 0) return 100.0; // from 0 to something = 100% increase
@@ -947,6 +979,8 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("address", employee.getAddress());
     response.put("salary", employee.getSalary());
     response.put("absentCount", metrics.absentCount());
+    response.put("presentCount", metrics.presentCount());
+    response.put("workingDays", metrics.presentCount());
     response.put("totalLateMinutes", metrics.monthlyLateMinutes());
     response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
     response.put("totalMissedTimes", metrics.totalMissedMinutes());

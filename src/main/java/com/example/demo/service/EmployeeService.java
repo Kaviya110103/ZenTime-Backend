@@ -1,6 +1,5 @@
 package com.example.demo.service;
 
-import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,8 +24,20 @@ public class EmployeeService {
     @Autowired
     private AttendanceMetricsService attendanceMetricsService;
 
+    @Autowired
+    private PayrollCalculationService payrollCalculationService;
+
+    @Autowired
+    private SchemaMaintenanceService schemaMaintenanceService;
+
     // Create or Update
     public Employee saveEmployee(Employee employee) {
+        schemaMaintenanceService.ensureEmployeeSchema();
+        if (employee.getAdditionalWorkingDays() != null) {
+            for (com.example.demo.MODELS.EmployeeAdditionalWorkingDay day : employee.getAdditionalWorkingDays()) {
+                day.setEmployee(employee);
+            }
+        }
         if (employee.getId() == null) {
             String companyCode = normalizeCompanyCode(employee.getCompanyCode());
             employee.setCompanyCode(companyCode);
@@ -68,24 +79,29 @@ public class EmployeeService {
 
     // Get by ID
     public Optional<Employee> getEmployeeById(Long id) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return employeeRepository.findById(id);
     }
 
     public Optional<Employee> getEmployeeByIdAndClientId(Long id, Long clientId) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return employeeRepository.findByIdAndClientId(id, clientId);
     }
 
     // Get by Username
     public Optional<Employee> getEmployeeByUsername(String username) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return employeeRepository.findByUsername(username);
     }
 
     // Get all employees
     public List<Employee> getAllEmployees() {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return employeeRepository.findAll();
     }
 
     public List<Employee> getEmployeesByClientId(Long clientId) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return employeeRepository.findByClientId(clientId);
     }
 
@@ -102,37 +118,29 @@ public class EmployeeService {
 
     public EmployeeNetPayment calculateNetPayment(Employee employee, int month, int year, int paidLeaveDayCount,
             int casualLeaveDayCount, int holidayCount, String paidLeaveType, int presentDays) {
-        int totalPaidLeaveCount = paidLeaveDayCount + casualLeaveDayCount + holidayCount;
+        PayrollCalculationService.PayrollResult result =
+                payrollCalculationService.calculateMonthlyPayroll(employee.getId(), month, year);
 
-        YearMonth yearMonth = YearMonth.of(year, month);
-        int totalDaysInMonth = yearMonth.lengthOfMonth();
+        int totalPaidLeaveCount = result.paidLeaveDays()
+                + result.paidCasualDays()
+                + result.holidayDaysFull()
+                + result.holidayDaysHalf();
 
-        int totalWorkingDays = totalDaysInMonth - totalPaidLeaveCount;
-
-        int safeTotalWorkingDays = Math.max(totalWorkingDays, 1);
-        double baseNetSalary = ((double) presentDays / safeTotalWorkingDays) * employee.getSalary();
-        AttendanceMetricsService.MonthlyMetrics metrics =
-                attendanceMetricsService.calculateMonthlyMetrics(employee.getId(), month, year);
-        int shiftMinutesPerDay = attendanceMetricsService.resolveShiftDurationMinutes(employee);
-        double perDaySalary = employee.getSalary() / totalDaysInMonth;
-        double missedTimeDeduction = (perDaySalary / shiftMinutesPerDay) * metrics.totalMissedMinutes();
-        double netSalary = baseNetSalary - missedTimeDeduction;
-        if (netSalary < 0) {
-            netSalary = 0;
-        }
+        int totalWorkingDays = result.scheduledDays();
+        double netSalary = result.netSalary();
 
         EmployeeNetPayment payment = new EmployeeNetPayment();
         payment.setEmployee(employee);
         payment.setBranch(employee.getBranch());
         payment.setSalary(employee.getSalary());
         payment.setWeekOff(employee.getWeekOff());
-        payment.setPaidLeaveDayCount(paidLeaveDayCount);
-        payment.setCasualLeaveDayCount(casualLeaveDayCount);
-        payment.setHolidayCount(holidayCount);
+        payment.setPaidLeaveDayCount(result.paidLeaveDays());
+        payment.setCasualLeaveDayCount(result.paidCasualDays());
+        payment.setHolidayCount(result.holidayDaysFull() + result.holidayDaysHalf());
         payment.setPaidLeaveType(paidLeaveType);
         payment.setTotalPaidLeaveCount(totalPaidLeaveCount);
         payment.setTotalWorkingDays(totalWorkingDays);
-        payment.setPresentDays(presentDays);
+        payment.setPresentDays(result.workedDays());
         payment.setNetSalary(netSalary);
         payment.setMonth(month);
         payment.setYear(year);

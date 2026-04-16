@@ -1,5 +1,6 @@
 package com.example.demo.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,11 +20,17 @@ import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.EmployeeService;
+import com.example.demo.service.AttendanceSchedulerService;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/attendance-records")
@@ -42,6 +49,9 @@ public class AttendanceRecordControllerFillter {
 
     @Autowired
     private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private AttendanceSchedulerService attendanceSchedulerService;
 
     private void safeSyncRecords(List<AttendanceRecord> records) {
         try {
@@ -89,9 +99,10 @@ public class AttendanceRecordControllerFillter {
         if (employee.isEmpty()) {
             return List.of();
         }
-        String monthPattern = String.format("/%02d/%d", month, year);
-        List<AttendanceRecord> records =
-                attendanceRecordRepository.findByEmployeeIdAndMonthPattern(employee.get().getId(), monthPattern);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId())
+                .stream()
+                .filter(record -> isRecordInMonth(record, month, year))
+                .toList();
         safeSyncRecords(records);
         return records;
     }
@@ -108,6 +119,8 @@ public class AttendanceRecordControllerFillter {
             emptyResponse.put("month", month);
             emptyResponse.put("year", year);
             emptyResponse.put("absentCount", 0);
+            emptyResponse.put("presentCount", 0);
+            emptyResponse.put("workingDays", 0);
             emptyResponse.put("totalLateMinutes", 0);
             emptyResponse.put("totalEarlyOutMinutes", 0);
             emptyResponse.put("totalMissedTimes", 0);
@@ -127,6 +140,8 @@ public class AttendanceRecordControllerFillter {
         response.put("month", month);
         response.put("year", year);
         response.put("absentCount", metrics.absentCount());
+        response.put("presentCount", metrics.presentCount());
+        response.put("workingDays", metrics.presentCount());
         response.put("totalLateMinutes", metrics.monthlyLateMinutes());
         response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
         response.put("totalMissedTimes", metrics.totalMissedMinutes());
@@ -146,16 +161,31 @@ public class AttendanceRecordControllerFillter {
         if (employee.isEmpty()) {
             return ResponseEntity.ok(List.of());
         }
-
-        Optional<AttendanceRecord> recordOpt =
-                attendanceRecordRepository.findByDateAndEmployeeId(date, employee.get().getId());
-        if (recordOpt.isEmpty()) {
+        LocalDate targetDate = parseFlexibleDate(date);
+        if (targetDate == null) {
             return ResponseEntity.ok(List.of());
         }
 
-        AttendanceRecord record = recordOpt.get();
-        safeSyncRecord(record);
-        return ResponseEntity.ok(record);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId())
+                .stream()
+                .filter(record -> {
+                    LocalDate recordDate = parseFlexibleDate(record.getDate());
+                    return recordDate != null && recordDate.equals(targetDate);
+                })
+                .toList();
+
+        if (records.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+
+        if (records.size() == 1) {
+            AttendanceRecord record = records.get(0);
+            safeSyncRecord(record);
+            return ResponseEntity.ok(record);
+        }
+
+        safeSyncRecords(records);
+        return ResponseEntity.ok(records);
     }
 
     // 5. Get attendance details by employee branch
@@ -172,8 +202,18 @@ public class AttendanceRecordControllerFillter {
             @RequestParam int month,
             @RequestParam int year,
             @RequestParam String date) {
-        String monthPattern = String.format("/%02d/%d", month, year);
-        List<AttendanceRecord> records = attendanceRecordRepository.findByMonthPatternAndDate(monthPattern, date);
+        List<AttendanceRecord> records = attendanceRecordRepository.findAll()
+                .stream()
+                .filter(record -> isRecordInMonth(record, month, year))
+                .filter(record -> {
+                    LocalDate recordDate = parseFlexibleDate(record.getDate());
+                    LocalDate targetDate = parseFlexibleDate(date);
+                    if (recordDate == null || targetDate == null) {
+                        return false;
+                    }
+                    return recordDate.equals(targetDate);
+                })
+                .toList();
         safeSyncRecords(records);
         return records;
     }
@@ -242,8 +282,10 @@ public ResponseEntity<?> uploadBothImagesForAll(@RequestParam("file") MultipartF
             @RequestParam String attendanceStatus,
             @RequestParam int month,
             @RequestParam int year) {
-        String monthPattern = String.format("/%02d/%d", month, year);
-        List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndMonthPattern(attendanceStatus, monthPattern);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatus(attendanceStatus)
+                .stream()
+                .filter(record -> isRecordInMonth(record, month, year))
+                .toList();
         safeSyncRecords(records);
         return records;
     }
@@ -254,8 +296,13 @@ public ResponseEntity<?> uploadBothImagesForAll(@RequestParam("file") MultipartF
             @RequestParam int year,
             @RequestParam String attendanceStatus,
             @RequestParam String branch) {
-        String monthPattern = String.format("/%02d/%d", month, year);
-        List<AttendanceRecord> records = attendanceRecordRepository.findByMonthStatusBranch(monthPattern, attendanceStatus, branch);
+        List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatus(attendanceStatus)
+                .stream()
+                .filter(record -> isRecordInMonth(record, month, year))
+                .filter(record -> record.getEmployee() != null
+                        && record.getEmployee().getBranch() != null
+                        && record.getEmployee().getBranch().equalsIgnoreCase(branch))
+                .toList();
         safeSyncRecords(records);
         return records;
     }
@@ -269,8 +316,19 @@ public ResponseEntity<?> uploadBothImagesForAll(@RequestParam("file") MultipartF
         return ResponseEntity.ok("Employee not found.");
     }
 
-    String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeIdAndDate(employee.get().getId(), today);
+    LocalDate today = java.time.LocalDate.now();
+    List<String> candidates = List.of(
+            today.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+            today.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+            today.format(java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+    );
+    List<AttendanceRecord> records = new ArrayList<>();
+    for (String candidate : candidates) {
+        records = attendanceRecordRepository.findByEmployeeIdAndDate(employee.get().getId(), candidate);
+        if (!records.isEmpty()) {
+            break;
+        }
+    }
 
     if (records.isEmpty()) {
         return ResponseEntity.ok("No attendance for today!");
@@ -332,6 +390,37 @@ private Optional<Employee> resolveEmployeeByRef(String employeeRef) {
 
     return Optional.empty();
 }
+
+private boolean isRecordInMonth(AttendanceRecord record, int month, int year) {
+    if (record == null) {
+        return false;
+    }
+    LocalDate date = parseFlexibleDate(record.getDate());
+    if (date == null) {
+        return false;
+    }
+    return date.getMonthValue() == month && date.getYear() == year;
+}
+
+private LocalDate parseFlexibleDate(String raw) {
+    if (raw == null || raw.isBlank()) {
+        return null;
+    }
+    String value = raw.trim();
+    DateTimeFormatter[] formatters = new DateTimeFormatter[] {
+            DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy")
+    };
+    for (DateTimeFormatter formatter : formatters) {
+        try {
+            return LocalDate.parse(value, formatter);
+        } catch (DateTimeParseException ignored) {
+            // try next format
+        }
+    }
+    return null;
+}
 @GetMapping("/by-date-status-all")
 public List<AttendanceRecord> getAttendanceByDateAndStatusAll(
         @RequestParam String date,
@@ -348,6 +437,34 @@ public List<AttendanceRecord> getAbsentByDate(
             .findByDateAndAttendanceStatus(date, "Absent");
     attendanceMetricsService.synchronizeMissedMinutes(records);
     return records;
+}
+
+@GetMapping("/auto-absent/run-today")
+public ResponseEntity<?> runAutoAbsentToday() {
+    int updated = attendanceSchedulerService.runAutoAbsentForToday();
+    return ResponseEntity.ok(Map.of("updatedAbsentCount", updated));
+}
+
+@GetMapping("/debug-dates")
+public ResponseEntity<?> debugAttendanceDates(@RequestParam String employeeId) {
+    Optional<Employee> employee = resolveEmployeeByRef(employeeId);
+    if (employee.isEmpty()) {
+        return ResponseEntity.ok(List.of());
+    }
+    List<Map<String, Object>> rows = attendanceRecordRepository.findByEmployeeId(employee.get().getId())
+            .stream()
+            .map(record -> {
+                Map<String, Object> row = new HashMap<>();
+                row.put("id", record.getId());
+                row.put("dateRaw", record.getDate());
+                LocalDate parsed = parseFlexibleDate(record.getDate());
+                row.put("dateParsed", parsed != null ? parsed.toString() : null);
+                row.put("status", record.getAttendanceStatus());
+                return row;
+            })
+            .sorted(Comparator.comparing(r -> String.valueOf(r.get("dateParsed")), Comparator.nullsLast(String::compareTo)))
+            .collect(Collectors.toList());
+    return ResponseEntity.ok(rows);
 }
 
 
