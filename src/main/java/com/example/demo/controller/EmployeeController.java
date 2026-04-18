@@ -16,6 +16,7 @@ import javax.sql.DataSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,8 @@ import com.example.demo.tenant.TenantContext;
 @CrossOrigin(origins = "*") // Allow frontend to access
 public class EmployeeController {
     private static final Logger logger = LoggerFactory.getLogger(EmployeeController.class);
+    private static final String EMPLOYEE_LIMIT_EXCEEDED_MESSAGE =
+            "Employee limit exceeded. Kindly contact Super Admin.";
 
     private final PasswordEncoder passwordEncoder;
     private final EmployeeService employeeService;
@@ -81,9 +84,20 @@ public class EmployeeController {
 
     
           @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Employee> createEmployee(@RequestBody Employee employee) {
+    public ResponseEntity<?> createEmployee(@RequestBody Employee employee) {
         if (employee.getClientId() == null) {
             return ResponseEntity.badRequest().build(); // must supply clientId
+        }
+
+        Integer employeeLimit;
+        try {
+            employeeLimit = resolveEmployeeLimitForClient(employee.getClientId());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        long currentEmployeeCount = employeeRepository.countByClientId(employee.getClientId());
+        if (employeeLimit != null && employeeLimit > 0 && currentEmployeeCount >= employeeLimit) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(EMPLOYEE_LIMIT_EXCEEDED_MESSAGE);
         }
 
         String companyCode;
@@ -267,6 +281,28 @@ public class EmployeeController {
 
         Employee existingEmployee = optionalEmployee.get();
 
+        String requestedEmail = updatedEmployeeData.getEmail() == null
+                ? null
+                : updatedEmployeeData.getEmail().trim().toLowerCase();
+        if (requestedEmail == null || requestedEmail.isBlank()) {
+            return ResponseEntity.badRequest().body("Email is required");
+        }
+        Optional<Employee> existingEmailOwner = employeeRepository.findByEmailIgnoreCaseAndIdNot(requestedEmail, id);
+        if (existingEmailOwner.isPresent() && !existingEmailOwner.get().getId().equals(id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Email already exists");
+        }
+        String requestedUsername = updatedEmployeeData.getUsername() == null
+                ? null
+                : updatedEmployeeData.getUsername().trim();
+        if (requestedUsername == null || requestedUsername.isBlank()) {
+            return ResponseEntity.badRequest().body("Username is required");
+        }
+        Optional<Employee> existingUsernameOwner =
+                employeeRepository.findByUsernameIgnoreCaseAndIdNot(requestedUsername, id);
+        if (existingUsernameOwner.isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Username already exists");
+        }
+
         // Update fields except password
         existingEmployee.setFirstName(updatedEmployeeData.getFirstName());
         existingEmployee.setLastName(updatedEmployeeData.getLastName());
@@ -274,9 +310,9 @@ public class EmployeeController {
         existingEmployee.setGender(updatedEmployeeData.getGender());
         existingEmployee.setPosition(updatedEmployeeData.getPosition());
         existingEmployee.setBranch(updatedEmployeeData.getBranch());
-        existingEmployee.setUsername(updatedEmployeeData.getUsername());
+        existingEmployee.setUsername(requestedUsername);
         existingEmployee.setDob(updatedEmployeeData.getDob());
-        existingEmployee.setEmail(updatedEmployeeData.getEmail());
+        existingEmployee.setEmail(requestedEmail);
         existingEmployee.setProfileImage(updatedEmployeeData.getProfileImage());
         existingEmployee.setAddress(updatedEmployeeData.getAddress());
         existingEmployee.setAlternativeMobile(updatedEmployeeData.getAlternativeMobile());
@@ -327,8 +363,33 @@ public class EmployeeController {
             }
         }
 
-        employeeRepository.save(existingEmployee);
-        return ResponseEntity.ok(existingEmployee);
+        try {
+            employeeRepository.save(existingEmployee);
+            return ResponseEntity.ok(existingEmployee);
+        } catch (DataIntegrityViolationException ex) {
+            String msg = resolveUniqueConflictMessage(ex);
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(msg);
+        }
+    }
+
+    private String resolveUniqueConflictMessage(DataIntegrityViolationException ex) {
+        String message = ex == null ? null : ex.getMostSpecificCause() == null
+                ? ex.getMessage()
+                : ex.getMostSpecificCause().getMessage();
+        if (message == null) {
+            return "Duplicate value exists";
+        }
+        String normalized = message.toLowerCase();
+        if (normalized.contains("email") || normalized.contains("email_id")) {
+            return "Email already exists";
+        }
+        if (normalized.contains("username")) {
+            return "Username already exists";
+        }
+        if (normalized.contains("employee_code")) {
+            return "Employee code already exists";
+        }
+        return "Duplicate value exists";
     }
 
     @PutMapping("/{id}/employee-code")
@@ -630,6 +691,21 @@ public class EmployeeController {
             throw new IllegalArgumentException("Client company code not found");
         }
         return code.trim().toLowerCase();
+    }
+
+    private Integer resolveEmployeeLimitForClient(Long clientId) {
+        if (clientId == null) {
+            throw new IllegalArgumentException("clientId is required");
+        }
+        List<Integer> rows = masterJdbcTemplate.query(
+                "SELECT employee_count FROM clients WHERE id = ?",
+                (rs, rowNum) -> rs.getObject(1, Integer.class),
+                clientId
+        );
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Client employee count not found");
+        }
+        return rows.get(0);
     }
 
     private boolean isEmployeeCodeForCompany(String employeeCode, String companyCode) {

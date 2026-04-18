@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Optional;
 import java.util.List;
 import java.util.Map;
@@ -66,35 +68,45 @@ public class EmployeeSalaryDetailsController {
                 additionalAllowancesTotal,
                 additionalAllowancesJson);
         double resolvedPfAmount = resolvePfAmount(salary, pfAmount, pfPercentage);
+        double normalizedSalary = roundCurrency(salary == null ? 0.0 : salary);
+        double normalizedConvenience = roundCurrency(convienceAmount == null ? 0.0 : convienceAmount);
+        double normalizedIncentive = roundCurrency(incentive == null ? 0.0 : incentive);
+        double normalizedOverTime = roundCurrency(overTime == null ? 0.0 : overTime);
+        double normalizedLossOfPay = roundCurrency(lossOfPay == null ? 0.0 : lossOfPay);
+        double normalizedAdvance = roundCurrency(advance == null ? 0.0 : advance);
+        double normalizedOthers = roundCurrency(others == null ? 0.0 : others);
+        double normalizedAdditionalTotal = roundCurrency(resolvedAdditionalTotal);
+        double normalizedPfAmount = roundCurrency(resolvedPfAmount);
 
         EmployeeSalaryDetails details = new EmployeeSalaryDetails();
         details.setEmployeeId(resolvedEmployeeId);
         details.setPosition(position);
         details.setBranch(branch);
-        details.setSalary(salary);
-        details.setConvienceAmount(convienceAmount);
-        details.setIncentive(incentive);
-        details.setOverTime(overTime);
-        details.setLossOfPay(lossOfPay);
-        details.setAdvance(advance);
-        details.setOthers(others);
-        details.setPfAmount(resolvedPfAmount);
-        details.setPfPercentage(pfPercentage);
-        details.setAdditionalAllowancesTotal(resolvedAdditionalTotal);
+        details.setSalary(normalizedSalary);
+        details.setConvienceAmount(normalizedConvenience);
+        details.setIncentive(normalizedIncentive);
+        details.setOverTime(normalizedOverTime);
+        details.setLossOfPay(normalizedLossOfPay);
+        details.setAdvance(normalizedAdvance);
+        details.setOthers(normalizedOthers);
+        details.setPfAmount(normalizedPfAmount);
+        details.setPfPercentage(roundCurrency(pfPercentage == null ? 0.0 : pfPercentage));
+        details.setAdditionalAllowancesTotal(normalizedAdditionalTotal);
         details.setAdditionalAllowancesJson(additionalAllowancesJson);
 
         // Calculate net salary
-        double netSalary = salary
-                + convienceAmount
-                + incentive
-                + overTime
-                + resolvedAdditionalTotal
-                - lossOfPay
-                - advance
-                - others
-                - resolvedPfAmount;
+        BigDecimal netSalary = toMoney(normalizedSalary)
+                .add(toMoney(normalizedConvenience))
+                .add(toMoney(normalizedIncentive))
+                .add(toMoney(normalizedOverTime))
+                .add(toMoney(normalizedAdditionalTotal))
+                .subtract(toMoney(normalizedLossOfPay))
+                .subtract(toMoney(normalizedAdvance))
+                .subtract(toMoney(normalizedOthers))
+                .subtract(toMoney(normalizedPfAmount))
+                .setScale(2, RoundingMode.HALF_UP);
 
-        details.setNetSalary(netSalary);
+        details.setNetSalary(netSalary.doubleValue());
 
         salaryDetailsRepository.save(details);
         return ResponseEntity.ok(details);
@@ -140,6 +152,14 @@ public class EmployeeSalaryDetailsController {
             return Math.round((baseSalary * pfPercentage / 100.0) * 100.0) / 100.0;
         }
         return 0.0;
+    }
+
+    private double roundCurrency(double value) {
+        return toMoney(value).doubleValue();
+    }
+
+    private BigDecimal toMoney(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 
     private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientId) {

@@ -25,6 +25,7 @@ import com.example.demo.service.AttendanceSchedulerService;
 import java.util.HashMap;
 import java.util.Map;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Matcher;
@@ -84,6 +85,10 @@ public class AttendanceRecordControllerFillter {
         if (employee.isEmpty()) {
             return List.of();
         }
+        LocalDate today = LocalDate.now();
+        LocalDate from = today.withDayOfMonth(1);
+        attendanceSchedulerService.ensureAbsentForEmployeeDateRange(employee.get(), from, today);
+
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId());
         safeSyncRecords(records);
         return records;
@@ -99,6 +104,11 @@ public class AttendanceRecordControllerFillter {
         if (employee.isEmpty()) {
             return List.of();
         }
+        YearMonth yearMonth = YearMonth.of(year, month);
+        LocalDate from = yearMonth.atDay(1);
+        LocalDate to = yearMonth.atEndOfMonth();
+        attendanceSchedulerService.ensureAbsentForEmployeeDateRange(employee.get(), from, to);
+
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId())
                 .stream()
                 .filter(record -> isRecordInMonth(record, month, year))

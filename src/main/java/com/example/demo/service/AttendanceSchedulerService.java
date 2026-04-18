@@ -3,6 +3,7 @@ package com.example.demo.service;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.EnumMap;
@@ -50,7 +51,7 @@ public class AttendanceSchedulerService {
     @Value("${tenant.routing.enabled:false}")
     private boolean routingEnabled;
 
-    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
    // 🕐 Scheduled to run every day at 3:00 PM
 @Scheduled(cron = "0 0 15 * * ?")
@@ -79,71 +80,109 @@ public void autoMarkAbsentAt3PM() {
 }
 
 public int runAutoAbsentForToday() {
-    String todayDate = LocalDate.now().format(formatter);
-
-    List<Employee> allEmployees = employeeRepository.findAll();
-    int absentCount = 0;
-
-    for (Employee employee : allEmployees) {
-        if (!isScheduledWorkingDay(employee)) {
-            continue;
-        }
-        if (isHoliday(employee)) {
-            continue;
-        }
-
-        List<AttendanceRecord> attendanceRecords =
-                attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), todayDate);
-
-        if (!attendanceRecords.isEmpty()) {
-            AttendanceRecord existing = attendanceRecords.get(0);
-            boolean hasTimeIn = existing.getTimeIn() != null;
-            boolean isPresent = "Present".equalsIgnoreCase(existing.getAttendanceStatus());
-            if (hasTimeIn && isPresent) {
-                continue;
-            }
-            existing.setAttendanceStatus("Absent");
-            existing.setDayStatus("Auto Absent - No Time In");
-            attendanceRecordRepository.save(existing);
-            absentCount++;
-            continue;
-        }
-
-        List<LeavePermission> leaves = leavePermissionRepository.findByEmployeeId(employee.getId());
-        boolean hasLeaveToday = leaves.stream().anyMatch(leave -> {
-            try {
-                LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
-                LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
-                LocalDate today = LocalDate.now();
-                return !today.isBefore(start) && !today.isAfter(end);
-            } catch (Exception e) {
-                return false;
-            }
-        });
-
-        if (!hasLeaveToday) {
-            AttendanceRecord absentRecord = new AttendanceRecord();
-            absentRecord.setEmployee(employee);
-            absentRecord.setAttendanceStatus("Absent");
-            absentRecord.setDate(todayDate);
-            absentRecord.setDayStatus("Auto Absent - No Time In");
-            attendanceRecordRepository.save(absentRecord);
-            absentCount++;
-        }
-    }
-
+    int absentCount = runAutoAbsentForDate(LocalDate.now());
     System.out.println(absentCount + " employees auto-marked as Absent at 3:00 PM.");
     return absentCount;
 }
 
-private boolean isScheduledWorkingDay(Employee employee) {
+public int runAutoAbsentForDate(LocalDate targetDate) {
+    if (targetDate == null) {
+        return 0;
+    }
+    List<Employee> allEmployees = employeeRepository.findAll();
+    int absentCount = 0;
+    for (Employee employee : allEmployees) {
+        absentCount += ensureAbsentForEmployeeOnDate(employee, targetDate);
+    }
+    return absentCount;
+}
+
+public int ensureAbsentForEmployeeDateRange(Employee employee, LocalDate from, LocalDate to) {
+    if (employee == null || from == null || to == null || from.isAfter(to)) {
+        return 0;
+    }
+
+    LocalDate today = LocalDate.now();
+    LocalDate safeEnd = to.isAfter(today) ? today : to;
+    int absentCount = 0;
+    for (LocalDate cursor = from; !cursor.isAfter(safeEnd); cursor = cursor.plusDays(1)) {
+        absentCount += ensureAbsentForEmployeeOnDate(employee, cursor);
+    }
+    return absentCount;
+}
+
+private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDate) {
+    if (employee == null || targetDate == null) {
+        return 0;
+    }
+
+    if (targetDate.equals(LocalDate.now()) && LocalTime.now().isBefore(LocalTime.of(15, 0))) {
+        return 0;
+    }
+
+    if (!isScheduledWorkingDay(employee, targetDate)) {
+        return 0;
+    }
+    if (isHoliday(employee, targetDate)) {
+        return 0;
+    }
+    if (hasLeaveOnDate(employee, targetDate)) {
+        return 0;
+    }
+
+    String targetDateText = targetDate.format(formatter);
+    List<AttendanceRecord> attendanceRecords =
+            attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), targetDateText);
+
+    if (!attendanceRecords.isEmpty()) {
+        AttendanceRecord existing = attendanceRecords.get(0);
+        String status = existing.getAttendanceStatus() == null ? "" : existing.getAttendanceStatus().trim();
+        if ("Leave".equalsIgnoreCase(status) || "On Leave".equalsIgnoreCase(status)) {
+            return 0;
+        }
+        boolean hasTimeIn = existing.getTimeIn() != null;
+        boolean isPresent = "Present".equalsIgnoreCase(status);
+        if (hasTimeIn && isPresent) {
+            return 0;
+        }
+        existing.setAttendanceStatus("Absent");
+        existing.setDayStatus("Auto Absent - No Time In");
+        attendanceRecordRepository.save(existing);
+        return 1;
+    }
+
+    AttendanceRecord absentRecord = new AttendanceRecord();
+    absentRecord.setEmployee(employee);
+    absentRecord.setAttendanceStatus("Absent");
+    absentRecord.setDate(targetDateText);
+    absentRecord.setDayStatus("Auto Absent - No Time In");
+    attendanceRecordRepository.save(absentRecord);
+    return 1;
+}
+
+private boolean hasLeaveOnDate(Employee employee, LocalDate targetDate) {
+    if (employee == null || targetDate == null) {
+        return false;
+    }
+    List<LeavePermission> leaves = leavePermissionRepository.findByEmployeeId(employee.getId());
+    return leaves.stream().anyMatch(leave -> {
+        try {
+            LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
+            LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
+            return !targetDate.isBefore(start) && !targetDate.isAfter(end);
+        } catch (Exception e) {
+            return false;
+        }
+    });
+}
+
+private boolean isScheduledWorkingDay(Employee employee, LocalDate targetDate) {
     if (employee == null) {
         return false;
     }
-    LocalDate today = LocalDate.now();
-    DayOfWeek dayOfWeek = today.getDayOfWeek();
+    DayOfWeek dayOfWeek = targetDate.getDayOfWeek();
 
-    EmployeeAdditionalWorkingDay override = resolveAdditionalOverride(employee, today);
+    EmployeeAdditionalWorkingDay override = resolveAdditionalOverride(employee, targetDate);
     if (override != null) {
         return true;
     }
@@ -171,14 +210,13 @@ private boolean isScheduledWorkingDay(Employee employee) {
     return dayOfWeek != weekOffDay;
 }
 
-private boolean isHoliday(Employee employee) {
+private boolean isHoliday(Employee employee, LocalDate targetDate) {
     if (employee == null || employee.getClientId() == null) {
         return false;
     }
-    LocalDate today = LocalDate.now();
     try {
         List<Holiday> holidays = holidayRepository
-                .findByClientIdAndHolidayDateBetweenOrderByHolidayDateAsc(employee.getClientId(), today, today);
+                .findByClientIdAndHolidayDateBetweenOrderByHolidayDateAsc(employee.getClientId(), targetDate, targetDate);
         return !holidays.isEmpty();
     } catch (Exception ex) {
         // If holidays table doesn't exist in tenant DB, treat as no holiday.
