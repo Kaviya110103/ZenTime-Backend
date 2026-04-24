@@ -6,11 +6,15 @@ import com.example.demo.MODELS.DateUtil;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.MODELS.Location;
+import com.example.demo.MODELS.OvertimeRequest;
+import com.example.demo.MODELS.OvertimeRequestStatus;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
 import com.example.demo.repo.LocationRepository;
+import com.example.demo.repo.OvertimeRequestRepository;
 import com.example.demo.service.AttendanceMetricsService;
+import com.example.demo.service.AttendanceSchedulerService;
 import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
 
@@ -55,6 +59,8 @@ private LeavePermissionRepository leavePermissionRepository;
 @Autowired
 private AttendanceMetricsService attendanceMetricsService;
 @Autowired
+private AttendanceSchedulerService attendanceSchedulerService;
+@Autowired
 private LocationRepository locationRepository;
 
    @Autowired
@@ -66,7 +72,12 @@ private LocationRepository locationRepository;
     private AttendanceRecordRepository attendanceRecordRepository;
     @Autowired
     private com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService;
+    @Autowired
+    private OvertimeRequestRepository overtimeRequestRepository;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter TIME_FORMATTER_HH_MM = DateTimeFormatter.ofPattern("H:mm");
+    private static final DateTimeFormatter TIME_FORMATTER_HH_MM_SS = DateTimeFormatter.ofPattern("H:mm:ss");
+    private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(19, 0);
 @PutMapping("/start-day")
 public ResponseEntity<?> startDay(@RequestParam Long employeeId,
                                   @RequestParam String location,
@@ -275,20 +286,51 @@ public ResponseEntity<String> markTimeIn(
     public ResponseEntity<String> markTimeOut(
             @RequestParam Long recordId,
             @RequestParam MultipartFile imageOut,
-            @RequestParam(required = false) Boolean overtimeApproved) {
+            @RequestParam(required = false) Boolean overtimeApproved,
+            @RequestParam(required = false) Boolean overtimeRequested) {
         schemaMaintenanceService.ensureEmployeeSchema();
         Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
         if (optionalRecord.isPresent()) {
             AttendanceRecord record = optionalRecord.get();
             try {
-                record.setTimeOut(LocalDateTime.now());
+                LocalDateTime now = LocalDateTime.now();
+                record.setTimeOut(now);
                 if (overtimeApproved != null) {
                     record.setOvertimeApproved(overtimeApproved);
+                }
+                if (overtimeRequested != null) {
+                    record.setOvertimeRequested(overtimeRequested);
                 }
                 if (imageOut != null && !imageOut.isEmpty()) {
                     record.setImageOut(imageOut.getBytes());
                 }
                 attendanceRecordRepository.save(record);
+
+                if (Boolean.TRUE.equals(overtimeRequested)) {
+                    Employee employee = record.getEmployee();
+                    if (employee != null) {
+                        LocalTime shiftEnd = parseShiftEnd(employee.getShiftEndTime());
+                        LocalTime logoutTime = now.toLocalTime();
+                        long overtimeMinutes = 0;
+                        if (logoutTime.isAfter(shiftEnd)) {
+                            overtimeMinutes = Duration.between(shiftEnd, logoutTime).toMinutes();
+                        }
+                        double overtimeHours = Math.round((Math.max(overtimeMinutes, 0) / 60.0) * 100.0) / 100.0;
+                        if (overtimeHours > 0) {
+                            OvertimeRequest request = overtimeRequestRepository
+                                    .findFirstByEmployeeIdAndDateOrderByIdDesc(employee.getId(), record.getDate())
+                                    .orElseGet(OvertimeRequest::new);
+                            request.setEmployee(employee);
+                            request.setDate(record.getDate());
+                            request.setOvertimeHours(overtimeHours);
+                            request.setStatus(OvertimeRequestStatus.PENDING);
+                            overtimeRequestRepository.save(request);
+                            record.setOvertimeApproved(false);
+                            attendanceRecordRepository.save(record);
+                        }
+                    }
+                }
+
                 return ResponseEntity.ok("Time-out recorded successfully.");
             } catch (IOException e) {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to process image.");
@@ -767,6 +809,13 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails(
 @GetMapping("/today-absent")
 public List<Map<String, Object>> getTodayAbsent(
         @RequestParam(value = "clientId", required = false) Long clientId) {
+    try {
+        // Keep today's absent list fresh even when scheduler was missed/restarted.
+        attendanceSchedulerService.runAutoAbsentForToday();
+    } catch (Exception ex) {
+        System.out.println("today-absent auto-sync skipped: " + ex.getMessage());
+    }
+
     List<AttendanceRecord> absentRecords = attendanceService.getTodayAbsentRecords();
 
     return absentRecords.stream()
@@ -1030,6 +1079,22 @@ private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientI
     }
 
     return Optional.empty();
+}
+
+private LocalTime parseShiftEnd(String raw) {
+    if (raw == null || raw.isBlank()) {
+        return DEFAULT_SHIFT_END;
+    }
+    try {
+        return LocalTime.parse(raw.trim(), TIME_FORMATTER_HH_MM_SS);
+    } catch (DateTimeParseException ignored) {
+        // Fallback below
+    }
+    try {
+        return LocalTime.parse(raw.trim(), TIME_FORMATTER_HH_MM);
+    } catch (DateTimeParseException ignored) {
+        return DEFAULT_SHIFT_END;
+    }
 }
 
 

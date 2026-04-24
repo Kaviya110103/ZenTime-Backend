@@ -52,6 +52,7 @@ public class AttendanceRecord {
     private Integer missedTimes; // Total missed minutes (timeIn + timeOut deviation)
 
     private Boolean overtimeApproved = false;
+    private Boolean overtimeRequested = false;
     public AttendanceRecord(Integer missedtimes, String attendancelocation) {
         this.missedTimes = missedtimes;
         this.attendancelocation = attendancelocation;
@@ -115,6 +116,14 @@ public class AttendanceRecord {
 
     public void setOvertimeApproved(Boolean overtimeApproved) {
         this.overtimeApproved = overtimeApproved;
+    }
+
+    public Boolean getOvertimeRequested() {
+        return overtimeRequested;
+    }
+
+    public void setOvertimeRequested(Boolean overtimeRequested) {
+        this.overtimeRequested = overtimeRequested;
     }
 
 

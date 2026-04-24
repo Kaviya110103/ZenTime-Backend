@@ -5,6 +5,7 @@ import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.HolidayRepository;
 import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.repo.OvertimeRequestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,18 +31,21 @@ public class PayrollCalculationService {
     private final LeavePermissionRepository leavePermissionRepository;
     private final HolidayRepository holidayRepository;
     private final SchemaMaintenanceService schemaMaintenanceService;
+    private final OvertimeRequestRepository overtimeRequestRepository;
 
     public PayrollCalculationService(
             EmployeeRepository employeeRepository,
             AttendanceRecordRepository attendanceRecordRepository,
             LeavePermissionRepository leavePermissionRepository,
             HolidayRepository holidayRepository,
-            SchemaMaintenanceService schemaMaintenanceService) {
+            SchemaMaintenanceService schemaMaintenanceService,
+            OvertimeRequestRepository overtimeRequestRepository) {
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.leavePermissionRepository = leavePermissionRepository;
         this.holidayRepository = holidayRepository;
         this.schemaMaintenanceService = schemaMaintenanceService;
+        this.overtimeRequestRepository = overtimeRequestRepository;
     }
 
     @Transactional(readOnly = true)
@@ -504,9 +508,6 @@ public class PayrollCalculationService {
                 continue;
             }
             workedMinutesByDate.merge(date, minutes, Integer::sum);
-            if (Boolean.TRUE.equals(record.getOvertimeApproved())) {
-                overtimeApprovedDates.add(date);
-            }
             WorkEntry entry = workEntries.getOrDefault(date, new WorkEntry());
             if (entry.earliestTimeIn == null || normalizedIn.isBefore(entry.earliestTimeIn)) {
                 entry.earliestTimeIn = normalizedIn;
@@ -518,6 +519,19 @@ public class PayrollCalculationService {
             }
             entry.totalWorkedMinutes += minutes;
             workEntries.put(date, entry);
+        }
+
+        List<OvertimeRequest> approvedRequests =
+                overtimeRequestRepository.findByEmployeeIdAndStatus(employeeId, OvertimeRequestStatus.APPROVED);
+        for (OvertimeRequest request : approvedRequests) {
+            if (request == null || request.getDate() == null) {
+                continue;
+            }
+            LocalDate requestDate = parseDbDate(request.getDate());
+            if (requestDate == null || requestDate.getMonthValue() != month || requestDate.getYear() != year) {
+                continue;
+            }
+            overtimeApprovedDates.add(requestDate);
         }
 
         return new WorkSummary(workedMinutesByDate, overtimeApprovedDates, workEntries);

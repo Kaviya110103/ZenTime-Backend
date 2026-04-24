@@ -28,6 +28,7 @@ public class SchemaMaintenanceService {
         ensureAdditionalWorkingDaysTable();
         ensureEmployeeSalaryDetailsTableColumns();
         ensureAttendanceRecordColumns();
+        ensureOvertimeRequestTable();
     }
 
     private String resolveDatabaseName() {
@@ -77,6 +78,33 @@ public class SchemaMaintenanceService {
             return;
         }
         ensureColumn("attendance_record", "overtime_approved", "BIT DEFAULT 0");
+        ensureColumn("attendance_record", "overtime_requested", "BIT DEFAULT 0");
+    }
+
+    private void ensureOvertimeRequestTable() {
+        if (tableExists("overtime_request")) {
+            ensureColumn("overtime_request", "status", "VARCHAR(16) NOT NULL DEFAULT 'PENDING'");
+            ensureColumn("overtime_request", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+            ensureColumn("overtime_request", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+            return;
+        }
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS overtime_request (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    employee_id BIGINT NOT NULL,
+                    date VARCHAR(16) NOT NULL,
+                    overtime_hours DOUBLE NOT NULL DEFAULT 0,
+                    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_overtime_request_employee (employee_id),
+                    KEY idx_overtime_request_date (date),
+                    CONSTRAINT fk_overtime_request_employee
+                        FOREIGN KEY (employee_id) REFERENCES employee(id)
+                        ON DELETE CASCADE
+                )
+                """);
     }
 
     private boolean tableExists(String tableName) {

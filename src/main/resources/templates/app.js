@@ -1,5 +1,5 @@
 let recordId = null;
-const serverURL = "http://localhost:8080";
+const serverURL = "https://test.zentime.co.in";
 
 function showSection(id) {
   document.getElementById(id).classList.remove("hidden");

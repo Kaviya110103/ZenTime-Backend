@@ -54,35 +54,44 @@ public class AttendanceSchedulerService {
 private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
    // 🕐 Scheduled to run every day at 3:00 PM
-@Scheduled(cron = "0 0 15 * * ?")
+@Scheduled(cron = "0 0 15 * * ?", zone = "Asia/Kolkata")
 public void autoMarkAbsentAt3PM() {
-    if (routingEnabled) {
-        List<Client> activeClients = clientRepository.findAll()
-                .stream()
-                .filter(client -> client != null
-                        && client.getTenantDbName() != null
-                        && !client.getTenantDbName().isBlank()
-                        && "ACTIVE".equalsIgnoreCase(client.getProvisioningStatus()))
-                .collect(Collectors.toList());
-
-        for (Client client : activeClients) {
-            TenantContext.setTenantDb(client.getTenantDbName());
-            try {
-                runAutoAbsentForToday();
-            } finally {
-                TenantContext.clear();
-            }
-        }
-        return;
-    }
-
-    runAutoAbsentForToday();
+    int updated = runAutoAbsentForToday();
+    System.out.println("Auto absent scheduler completed for " + LocalDate.now() + ". updatedAbsentCount=" + updated);
 }
 
 public int runAutoAbsentForToday() {
-    int absentCount = runAutoAbsentForDate(LocalDate.now());
-    System.out.println(absentCount + " employees auto-marked as Absent at 3:00 PM.");
-    return absentCount;
+    LocalDate today = LocalDate.now();
+    String existingTenant = TenantContext.getTenantDb();
+    boolean hasTenantContext = existingTenant != null && !existingTenant.isBlank();
+
+    if (!routingEnabled || hasTenantContext) {
+        int absentCount = runAutoAbsentForDate(today);
+        System.out.println(absentCount + " employees auto-marked as Absent for " + today + ".");
+        return absentCount;
+    }
+
+    List<String> tenantTargets = resolveTenantTargets();
+    if (tenantTargets.isEmpty()) {
+        int absentCount = runAutoAbsentForDate(today);
+        System.out.println("No tenant targets found. Fallback auto-absent in current datasource. updatedAbsentCount=" + absentCount);
+        return absentCount;
+    }
+
+    int totalUpdated = 0;
+    for (String tenantDb : tenantTargets) {
+        TenantContext.setTenantDb(tenantDb);
+        try {
+            int updatedForTenant = runAutoAbsentForDate(today);
+            totalUpdated += updatedForTenant;
+            System.out.println("Auto absent processed tenantDb=" + tenantDb + " updatedAbsentCount=" + updatedForTenant);
+        } catch (Exception ex) {
+            System.out.println("Auto absent failed for tenantDb=" + tenantDb + " error=" + ex.getMessage());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+    return totalUpdated;
 }
 
 public int runAutoAbsentForDate(LocalDate targetDate) {
@@ -166,6 +175,10 @@ private boolean hasLeaveOnDate(Employee employee, LocalDate targetDate) {
     }
     List<LeavePermission> leaves = leavePermissionRepository.findByEmployeeId(employee.getId());
     return leaves.stream().anyMatch(leave -> {
+        String status = leave.getStatus() == null ? "" : leave.getStatus().trim();
+        if (!"approved".equalsIgnoreCase(status)) {
+            return false;
+        }
         try {
             LocalDate start = LocalDate.parse(leave.getStartDate(), formatter);
             LocalDate end = LocalDate.parse(leave.getEndDate(), formatter);
@@ -284,6 +297,32 @@ private DayOfWeek parseDayOfWeek(String raw) {
         case "SUN" -> DayOfWeek.SUNDAY;
         default -> null;
     };
+}
+
+private List<String> resolveTenantTargets() {
+    List<Client> clients = clientRepository.findAll();
+
+    List<String> activeTargets = clients.stream()
+            .filter(client -> client != null
+                    && client.getTenantDbName() != null
+                    && !client.getTenantDbName().isBlank()
+                    && "ACTIVE".equalsIgnoreCase(client.getProvisioningStatus()))
+            .map(Client::getTenantDbName)
+            .distinct()
+            .collect(Collectors.toList());
+
+    if (!activeTargets.isEmpty()) {
+        return activeTargets;
+    }
+
+    // Fallback for legacy clients where provisioning_status may be null/empty.
+    return clients.stream()
+            .filter(client -> client != null
+                    && client.getTenantDbName() != null
+                    && !client.getTenantDbName().isBlank())
+            .map(Client::getTenantDbName)
+            .distinct()
+            .collect(Collectors.toList());
 }
 
 }

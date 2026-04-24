@@ -205,7 +205,7 @@ public class ClientController {
             Client updated = clientService.retryTenantProvisioning(id);
             return ResponseEntity.ok(ClientResponse.fromEntity(updated));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
+            return ResponseEntity.status(404).body(Map.of("message", "Client not found"));
         }
     }
 
@@ -221,7 +221,7 @@ public class ClientController {
         } catch (RuntimeException e) {
             response.put("healthy", false);
             response.put("status", "NOT_FOUND");
-            response.put("message", e.getMessage());
+            response.put("message", "Client not found");
             return ResponseEntity.status(404).body(response);
         }
     }

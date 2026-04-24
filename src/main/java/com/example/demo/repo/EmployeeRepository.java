@@ -13,6 +13,8 @@ import com.example.demo.MODELS.Employee;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Optional<Employee> findByUsername(String username);
+    Optional<Employee> findFirstByUsernameIgnoreCase(String username);
+    Optional<Employee> findByUsernameAndClientId(String username, Long clientId);
     Optional<Employee> findByUsernameIgnoreCaseAndIdNot(String username, Long id);
     Optional<Employee> findByEmployeeCode(String employeeCode);
     Optional<Employee> findByEmail(String email);

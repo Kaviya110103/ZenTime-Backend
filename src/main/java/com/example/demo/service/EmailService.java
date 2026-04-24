@@ -29,7 +29,7 @@ public class EmailService {
             mailSender.send(mailMessage);
             return "Email sent successfully!";
         } catch (Exception e) {
-            return "Error while sending email: " + e.getMessage();
+            return "Failed to send email";
         }
     }
 
@@ -55,7 +55,7 @@ public class EmailService {
             mailSender.send(mimeMessage);
             return "Email with attachment sent successfully!";
         } catch (Exception e) {
-            return "Error while sending email with attachment: " + e.getMessage();
+            return "Failed to send email with attachment";
         }
     }
 }

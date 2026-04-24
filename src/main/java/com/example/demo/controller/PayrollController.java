@@ -264,7 +264,7 @@ public class PayrollController {
             return ResponseEntity.ok(Map.of("message", result));
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to generate/send payslip", "details", ex.getMessage()));
+                    .body(Map.of("error", "Failed to generate/send payslip"));
         }
     }
 
