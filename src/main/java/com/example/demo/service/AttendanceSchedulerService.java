@@ -4,6 +4,8 @@ package com.example.demo.service;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.EnumMap;
@@ -52,16 +54,17 @@ public class AttendanceSchedulerService {
     private boolean routingEnabled;
 
 private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Kolkata");
 
    // 🕐 Scheduled to run every day at 3:00 PM
 @Scheduled(cron = "0 0 15 * * ?", zone = "Asia/Kolkata")
 public void autoMarkAbsentAt3PM() {
     int updated = runAutoAbsentForToday();
-    System.out.println("Auto absent scheduler completed for " + LocalDate.now() + ". updatedAbsentCount=" + updated);
+    System.out.println("Auto absent scheduler completed for " + nowInBusinessZone().toLocalDate() + ". updatedAbsentCount=" + updated);
 }
 
 public int runAutoAbsentForToday() {
-    LocalDate today = LocalDate.now();
+    LocalDate today = nowInBusinessZone().toLocalDate();
     String existingTenant = TenantContext.getTenantDb();
     boolean hasTenantContext = existingTenant != null && !existingTenant.isBlank();
 
@@ -111,7 +114,7 @@ public int ensureAbsentForEmployeeDateRange(Employee employee, LocalDate from, L
         return 0;
     }
 
-    LocalDate today = LocalDate.now();
+    LocalDate today = nowInBusinessZone().toLocalDate();
     LocalDate safeEnd = to.isAfter(today) ? today : to;
     int absentCount = 0;
     for (LocalDate cursor = from; !cursor.isAfter(safeEnd); cursor = cursor.plusDays(1)) {
@@ -125,7 +128,8 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
         return 0;
     }
 
-    if (targetDate.equals(LocalDate.now()) && LocalTime.now().isBefore(LocalTime.of(15, 0))) {
+    ZonedDateTime now = nowInBusinessZone();
+    if (targetDate.equals(now.toLocalDate()) && now.toLocalTime().isBefore(LocalTime.of(15, 0))) {
         return 0;
     }
 
@@ -323,6 +327,10 @@ private List<String> resolveTenantTargets() {
             .map(Client::getTenantDbName)
             .distinct()
             .collect(Collectors.toList());
+}
+
+private ZonedDateTime nowInBusinessZone() {
+    return ZonedDateTime.now(BUSINESS_ZONE);
 }
 
 }

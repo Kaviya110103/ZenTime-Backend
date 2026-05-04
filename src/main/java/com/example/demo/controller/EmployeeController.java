@@ -104,8 +104,10 @@ public class EmployeeController {
         }
 
         String companyCode;
+        String companyName;
         try {
             companyCode = resolveCompanyCodeForClient(employee.getClientId());
+            companyName = resolveCompanyNameForClient(employee.getClientId());
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -150,28 +152,42 @@ public class EmployeeController {
         EmailDetails emailDetails = new EmailDetails();
         emailDetails.setSender("b.inba.ips444@gmail.com");
         emailDetails.setReceiver(createdEmployee.getEmail());
-        emailDetails.setSubject("Employee Account Credentials - Indra Institute Of Education");
+        emailDetails.setSubject("Employee Account Credentials - " + companyName);
 
         String message = String.format(
             """
             Dear %s,
-            
-            Welcome to Indra Institute of Education (IIE)! We are delighted to have you as part of our team.
-            
+
+            Welcome to %s! We are happy to have you as part of our team.
+
+            Your employee account has been successfully created in the ZenTime application.
+
             Login Credentials:
-            Username: %s
-            Password: %s
-            
-            Your Company Code: %s
-            
-            Please update your password after logging in.
-            
+            - Username: %s
+            - Password: %s
+
+            Company Code: %s
+
+            To get started, please download the ZenTime mobile application using the link below:
+            https://play.google.com/store/apps/details?id=com.wingroo.MyNewApp
+
+            After logging in, kindly update your employee profile in the ZenTime app with your correct details. This is important for maintaining accurate records.
+
+            You can also use the app to mark your daily attendance, apply for leave, and stay updated with company announcements.
+
+            For security reasons, we strongly recommend that you change your password after your first login.
+
+            If you face any issues, please contact your organization's admin.
+
             Regards,
-            Admin, IIE""",
+            Admin
+            %s""",
             createdEmployee.getFirstName(),
+            companyName,
             createdEmployee.getUsername(),
             plainPassword, // unhashed version
-            createdEmployee.getCompanyCode()
+            createdEmployee.getCompanyCode(),
+            companyName
         );
 
         emailDetails.setMessage(message);
@@ -835,6 +851,25 @@ public class EmployeeController {
             throw new IllegalArgumentException("Client company code not found");
         }
         return code.trim().toLowerCase();
+    }
+
+    private String resolveCompanyNameForClient(Long clientId) {
+        if (clientId == null) {
+            throw new IllegalArgumentException("clientId is required");
+        }
+        List<String> rows = masterJdbcTemplate.query(
+                "SELECT company_name FROM clients WHERE id = ?",
+                (rs, rowNum) -> rs.getString(1),
+                clientId
+        );
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Client company name not found");
+        }
+        String name = rows.get(0);
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Client company name not found");
+        }
+        return name.trim();
     }
 
     private Integer resolveEmployeeLimitForClient(Long clientId) {
