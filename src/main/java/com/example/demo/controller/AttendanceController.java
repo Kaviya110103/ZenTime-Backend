@@ -198,6 +198,107 @@ public List<Map<String, Object>> getMissedTimeoutEmployees(
     }
     return result;
 }
+
+@GetMapping("/completed-missed-timeout")
+public List<Map<String, Object>> getCompletedMissedTimeoutEmployees(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatus("Present");
+    List<Map<String, Object>> result = new ArrayList<>();
+
+    for (AttendanceRecord record : records) {
+        if (record == null || record.getEmployee() == null) {
+            continue;
+        }
+        if (clientId != null && !clientId.equals(record.getEmployee().getClientId())) {
+            continue;
+        }
+        if (record.getTimeOut() == null) {
+            continue;
+        }
+
+        String timeoutReason = record.getTimoutReason();
+        if (timeoutReason == null || timeoutReason.trim().isEmpty()) {
+            continue;
+        }
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("attendanceId", record.getId());
+        map.put("firstName", record.getEmployee().getFirstName());
+        map.put("mobile", record.getEmployee().getMobile());
+        map.put("branch", record.getEmployee().getBranch());
+        map.put("position", record.getEmployee().getPosition());
+        map.put("date", record.getDate());
+        map.put("timeoutReason", timeoutReason);
+        map.put("timeOut", record.getTimeOut());
+        map.put("status", "COMPLETED");
+        result.add(map);
+    }
+
+    return result;
+}
+
+@DeleteMapping("/completed-missed-timeout/{attendanceId}")
+public ResponseEntity<?> deleteCompletedMissedTimeoutRecord(
+        @PathVariable Long attendanceId,
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    Optional<AttendanceRecord> optional = attendanceRecordRepository.findById(attendanceId);
+    if (optional.isEmpty()) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Attendance record not found.");
+    }
+
+    AttendanceRecord record = optional.get();
+    Employee employee = record.getEmployee();
+    if (employee == null) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid attendance record.");
+    }
+    if (clientId != null && !clientId.equals(employee.getClientId())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access denied for this record.");
+    }
+    if (record.getTimeOut() == null) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Only completed clockout requests can be deleted.");
+    }
+
+    String timeoutReason = record.getTimoutReason();
+    if (timeoutReason == null || timeoutReason.trim().isEmpty()) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Only completed missed-time requests can be deleted.");
+    }
+
+    attendanceRecordRepository.delete(record);
+    return ResponseEntity.ok("Completed clockout request deleted successfully.");
+}
+
+@DeleteMapping("/completed-missed-timeout")
+public ResponseEntity<?> deleteAllCompletedMissedTimeoutRecords(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatus("Present");
+    List<AttendanceRecord> toDelete = new ArrayList<>();
+
+    for (AttendanceRecord record : records) {
+        if (record == null || record.getEmployee() == null) {
+            continue;
+        }
+        if (clientId != null && !clientId.equals(record.getEmployee().getClientId())) {
+            continue;
+        }
+        if (record.getTimeOut() == null) {
+            continue;
+        }
+        String timeoutReason = record.getTimoutReason();
+        if (timeoutReason == null || timeoutReason.trim().isEmpty()) {
+            continue;
+        }
+        toDelete.add(record);
+    }
+
+    if (toDelete.isEmpty()) {
+        return ResponseEntity.ok(Map.of("deletedCount", 0, "message", "No completed clockout requests found."));
+    }
+
+    attendanceRecordRepository.deleteAll(toDelete);
+    return ResponseEntity.ok(Map.of("deletedCount", toDelete.size(), "message", "Completed clockout requests deleted."));
+}
 @PutMapping("/complete-missed-timeout")
 public ResponseEntity<?> completeMissedTimeout(
         @RequestParam Long attendanceId,
