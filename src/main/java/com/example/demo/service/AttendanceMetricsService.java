@@ -18,8 +18,9 @@ import java.util.Optional;
 
 @Service
 public class AttendanceMetricsService {
-    public static final int MAX_APPROVED_PERMISSIONS_PER_MONTH = 2;
-    public static final int MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH = 120;
+    public static final int MAX_APPROVED_PERMISSIONS_PER_MONTH = 0;
+    public static final int MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH = 0;
+    private static final int DEFAULT_MINUTES_PER_PERMISSION = 60;
 
     private static final DateTimeFormatter DB_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM = DateTimeFormatter.ofPattern("H:mm");
@@ -119,6 +120,7 @@ public class AttendanceMetricsService {
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
         int absentCount = 0;
         int presentCount = 0;
+        int monthlyLateDays = 0;
         int monthlyLateMinutes = 0;
         int monthlyEarlyOutMinutes = 0;
         int totalMissedMinutes = 0;
@@ -139,6 +141,9 @@ public class AttendanceMetricsService {
             int lateMinutes = calculateDailyLateMinutes(record);
             int earlyOutMinutes = calculateDailyEarlyOutMinutes(record);
             int missedMinutes = lateMinutes + earlyOutMinutes;
+            if (lateMinutes > 0) {
+                monthlyLateDays++;
+            }
 
             monthlyLateMinutes += lateMinutes;
             monthlyEarlyOutMinutes += earlyOutMinutes;
@@ -150,11 +155,27 @@ public class AttendanceMetricsService {
         return new MonthlyMetrics(
                 absentCount,
                 presentCount,
+                monthlyLateDays,
                 monthlyLateMinutes,
                 monthlyEarlyOutMinutes,
                 totalMissedMinutes,
                 permissionUsage.approvedPermissionCount(),
                 permissionUsage.approvedPermissionMinutes());
+    }
+
+    public int resolveMaxApprovedPermissionsPerMonth(Employee employee) {
+        if (employee == null || employee.getPermissionAllowancePerMonth() == null) {
+            return MAX_APPROVED_PERMISSIONS_PER_MONTH;
+        }
+        return Math.max(0, employee.getPermissionAllowancePerMonth());
+    }
+
+    public int resolveMaxApprovedPermissionMinutesPerMonth(Employee employee) {
+        int permissionCount = resolveMaxApprovedPermissionsPerMonth(employee);
+        if (permissionCount <= 0) {
+            return 0;
+        }
+        return permissionCount * DEFAULT_MINUTES_PER_PERMISSION;
     }
 
     public PermissionUsage getApprovedPermissionUsage(Long employeeId, int month, int year, Long excludeLeaveId) {
@@ -275,13 +296,14 @@ public class AttendanceMetricsService {
     public record MonthlyMetrics(
             int absentCount,
             int presentCount,
+            int monthlyLateDays,
             int monthlyLateMinutes,
             int monthlyEarlyOutMinutes,
             int totalMissedMinutes,
             int approvedPermissionCount,
             int approvedPermissionMinutes) {
         public static MonthlyMetrics empty() {
-            return new MonthlyMetrics(0, 0, 0, 0, 0, 0, 0);
+            return new MonthlyMetrics(0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

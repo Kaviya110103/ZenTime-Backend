@@ -2,6 +2,8 @@ package com.example.demo.service;
 
 import java.util.List;
 import java.util.Optional;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class EmployeeService {
     // Create or Update
     public Employee saveEmployee(Employee employee) {
         schemaMaintenanceService.ensureEmployeeSchema();
+        employee.setSalary(normalizeSalary(employee.getSalary()));
         if (employee.getAdditionalWorkingDays() != null) {
             for (com.example.demo.MODELS.EmployeeAdditionalWorkingDay day : employee.getAdditionalWorkingDays()) {
                 day.setEmployee(employee);
@@ -75,6 +78,15 @@ public class EmployeeService {
 
     private String buildDefaultEmployeeCode(String companyCode, Long id) {
         return companyCode + ".EMP" + id;
+    }
+
+    private Double normalizeSalary(Double salary) {
+        if (salary == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(salary)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     // Get by ID

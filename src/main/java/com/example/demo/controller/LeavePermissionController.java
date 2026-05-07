@@ -14,12 +14,14 @@ import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.LeavePermissionRepository;
 import com.example.demo.service.AttendanceMetricsService;
+import com.example.demo.service.AttendanceSchedulerService;
 import com.example.demo.service.PushNotificationService;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 
@@ -44,6 +46,9 @@ public class LeavePermissionController {
 
     @Autowired
     private PushNotificationService pushNotificationService;
+
+    @Autowired
+    private AttendanceSchedulerService attendanceSchedulerService;
 
     // ✅ 1. POST Leave Permission
 @PostMapping("/create")
@@ -101,6 +106,7 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
         return ResponseEntity.badRequest().body("Invalid status.");
     }
 
+    String approvalWarning = null;
     if ("approved".equals(newStatus) && "Permission".equalsIgnoreCase(leave.getLeaveType())) {
         int permissionMinutes = attendanceMetricsService.calculatePermissionDurationMinutes(leave);
         LocalDate permissionDate = resolvePermissionMonthDate(leave);
@@ -115,21 +121,27 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
 
             int finalCount = usage.approvedPermissionCount() + 1;
             int finalMinutes = usage.approvedPermissionMinutes() + permissionMinutes;
-            if (finalCount > AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH) {
-                return ResponseEntity.badRequest().body(
+            int maxPermissionsPerMonth =
+                    attendanceMetricsService.resolveMaxApprovedPermissionsPerMonth(leave.getEmployee());
+            int maxPermissionMinutesPerMonth =
+                    attendanceMetricsService.resolveMaxApprovedPermissionMinutesPerMonth(leave.getEmployee());
+            if (finalCount > maxPermissionsPerMonth) {
+                approvalWarning =
                         "Approval limit exceeded: maximum "
-                                + AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH
-                                + " approved permissions per month.");
+                                + maxPermissionsPerMonth
+                                + " approved permissions per month.";
             }
-            if (finalMinutes > AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH) {
-                return ResponseEntity.badRequest().body(
+            if (approvalWarning == null
+                    && finalMinutes > maxPermissionMinutesPerMonth) {
+                approvalWarning =
                         "Approval limit exceeded: maximum "
-                                + AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH
-                                + " approved permission minutes per month.");
+                                + maxPermissionMinutesPerMonth
+                                + " approved permission minutes per month.";
             }
         }
     }
 
+    boolean isSwapWeekoff = isSwapWeekoffType(leave.getLeaveType());
     leave.setStatus(newStatus);
     leavePermissionRepository.save(leave);
     pushNotificationService.notifyLeaveStatus(leave);
@@ -140,6 +152,9 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
     Optional<LocalDate> startOpt = parseLeaveDate(leave.getStartDate(), formatter);
     Optional<LocalDate> endOpt = parseLeaveDate(leave.getEndDate(), formatter);
     if (startOpt.isEmpty() || endOpt.isEmpty()) {
+        if (approvalWarning != null) {
+            return ResponseEntity.ok("Leave status updated to " + newStatus + ". Note: " + approvalWarning);
+        }
         return ResponseEntity.ok("Leave status updated to " + newStatus);
     }
     LocalDate start = startOpt.get();
@@ -150,7 +165,16 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
         List<AttendanceRecord> existingRecords = attendanceRecordRepository.findByEmployeeIdAndDate(employeeId, formattedDate);
 
         if ("approved".equals(newStatus)) {
-            if (existingRecords.isEmpty()) {
+            if (isSwapWeekoff) {
+                for (AttendanceRecord record : existingRecords) {
+                    boolean removableDayStatus =
+                            "Auto Absent - No Time In".equals(record.getDayStatus())
+                                    || "Leave Approved - Absent".equals(record.getDayStatus());
+                    if (removableDayStatus && record.getTimeIn() == null && record.getTimeOut() == null) {
+                        attendanceRecordRepository.delete(record);
+                    }
+                }
+            } else if (existingRecords.isEmpty()) {
                 AttendanceRecord attendance = new AttendanceRecord();
                 attendance.setEmployee(leave.getEmployee());
                 attendance.setDate(formattedDate);
@@ -168,6 +192,13 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
         }
     }
 
+    if (isSwapWeekoff && !"approved".equals(newStatus)) {
+        attendanceSchedulerService.ensureAbsentForEmployeeDateRange(leave.getEmployee(), start, end);
+    }
+
+    if (approvalWarning != null) {
+        return ResponseEntity.ok("Leave status updated to " + newStatus + ". Note: " + approvalWarning);
+    }
     return ResponseEntity.ok("Leave status updated to " + newStatus);
 }
 
@@ -247,6 +278,13 @@ public ResponseEntity<Long> countLeavesByStatus(
         } catch (DateTimeParseException ex) {
             return Optional.empty();
         }
+    }
+
+    private boolean isSwapWeekoffType(String leaveTypeRaw) {
+        if (leaveTypeRaw == null) {
+            return false;
+        }
+        return leaveTypeRaw.trim().toLowerCase(Locale.ROOT).equals("swap weekoff");
     }
 }
 

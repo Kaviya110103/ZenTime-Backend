@@ -9,6 +9,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.EnumMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -55,6 +56,7 @@ public class AttendanceSchedulerService {
 
 private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Kolkata");
+private static final String SWAP_WEEKOFF_TYPE = "swap weekoff";
 
    // 🕐 Scheduled to run every day at 3:00 PM
 @Scheduled(cron = "0 0 15 * * ?", zone = "Asia/Kolkata")
@@ -128,6 +130,10 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
         return 0;
     }
 
+    if (isApprovedSwapWeekoffOnDate(employee, targetDate)) {
+        return 0;
+    }
+
     ZonedDateTime now = nowInBusinessZone();
     if (targetDate.equals(now.toLocalDate()) && now.toLocalTime().isBefore(LocalTime.of(15, 0))) {
         return 0;
@@ -171,6 +177,32 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
     absentRecord.setDayStatus("Auto Absent - No Time In");
     attendanceRecordRepository.save(absentRecord);
     return 1;
+}
+
+private boolean isApprovedSwapWeekoffOnDate(Employee employee, LocalDate targetDate) {
+    if (employee == null || employee.getId() == null || targetDate == null) {
+        return false;
+    }
+
+    List<LeavePermission> approvedLeaves =
+            leavePermissionRepository.findByEmployeeIdAndStatus(employee.getId(), "approved");
+    for (LeavePermission leave : approvedLeaves) {
+        if (!isSwapWeekoffType(leave.getLeaveType())) {
+            continue;
+        }
+        LocalDate start = parseLeaveDate(leave.getStartDate() != null ? leave.getStartDate() : leave.getDate());
+        LocalDate end = parseLeaveDate(leave.getEndDate() != null ? leave.getEndDate() : leave.getStartDate());
+        if (start == null) {
+            continue;
+        }
+        if (end == null) {
+            end = start;
+        }
+        if (!targetDate.isBefore(start) && !targetDate.isAfter(end)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 private boolean hasLeaveOnDate(Employee employee, LocalDate targetDate) {
@@ -301,6 +333,24 @@ private DayOfWeek parseDayOfWeek(String raw) {
         case "SUN" -> DayOfWeek.SUNDAY;
         default -> null;
     };
+}
+
+private boolean isSwapWeekoffType(String leaveTypeRaw) {
+    if (leaveTypeRaw == null) {
+        return false;
+    }
+    return leaveTypeRaw.trim().toLowerCase(Locale.ROOT).equals(SWAP_WEEKOFF_TYPE);
+}
+
+private LocalDate parseLeaveDate(String raw) {
+    if (raw == null || raw.isBlank()) {
+        return null;
+    }
+    try {
+        return LocalDate.parse(raw.trim(), formatter);
+    } catch (DateTimeParseException ex) {
+        return null;
+    }
 }
 
 private List<String> resolveTenantTargets() {

@@ -112,6 +112,10 @@ public class AttendanceRecordControllerFillter {
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employee.get().getId())
                 .stream()
                 .filter(record -> isRecordInMonth(record, month, year))
+                .sorted(Comparator
+                        .comparing((AttendanceRecord record) -> parseFlexibleDate(record.getDate()),
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(record -> Optional.ofNullable(record.getId()).orElse(Long.MAX_VALUE)))
                 .toList();
         safeSyncRecords(records);
         return records;
@@ -134,6 +138,7 @@ public class AttendanceRecordControllerFillter {
             emptyResponse.put("totalLateMinutes", 0);
             emptyResponse.put("totalEarlyOutMinutes", 0);
             emptyResponse.put("totalMissedTimes", 0);
+            emptyResponse.put("lateDays", 0);
             emptyResponse.put("approvedPermissionCount", 0);
             emptyResponse.put("approvedPermissionMinutes", 0);
             emptyResponse.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
@@ -152,13 +157,14 @@ public class AttendanceRecordControllerFillter {
         response.put("absentCount", metrics.absentCount());
         response.put("presentCount", metrics.presentCount());
         response.put("workingDays", metrics.presentCount());
+        response.put("lateDays", metrics.monthlyLateDays());
         response.put("totalLateMinutes", metrics.monthlyLateMinutes());
         response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
         response.put("totalMissedTimes", metrics.totalMissedMinutes());
         response.put("approvedPermissionCount", metrics.approvedPermissionCount());
         response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
-        response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
-        response.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
+        response.put("maxPermissionsPerMonth", attendanceMetricsService.resolveMaxApprovedPermissionsPerMonth(employee.get()));
+        response.put("maxPermissionMinutesPerMonth", attendanceMetricsService.resolveMaxApprovedPermissionMinutesPerMonth(employee.get()));
         return ResponseEntity.ok(response);
     }
 

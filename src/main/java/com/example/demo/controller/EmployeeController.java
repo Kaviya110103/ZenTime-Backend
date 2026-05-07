@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.ArrayList;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -367,12 +369,13 @@ public class EmployeeController {
             existingEmployee.setAlternativeMobile(updatedEmployeeData.getAlternativeMobile());
             existingEmployee.setDateOfJoining(updatedEmployeeData.getDateOfJoining());
             existingEmployee.setResetToken(updatedEmployeeData.getResetToken());
-            existingEmployee.setSalary(updatedEmployeeData.getSalary());
+            existingEmployee.setSalary(normalizeSalaryValue(updatedEmployeeData.getSalary()));
             existingEmployee.setWeekOff(updatedEmployeeData.getWeekOff());
             existingEmployee.setShiftStartTime(updatedEmployeeData.getShiftStartTime());
             existingEmployee.setShiftEndTime(updatedEmployeeData.getShiftEndTime());
             existingEmployee.setLeavePolicyType(updatedEmployeeData.getLeavePolicyType());
             existingEmployee.setCasualLeaveBalance(updatedEmployeeData.getCasualLeaveBalance());
+            existingEmployee.setPermissionAllowancePerMonth(updatedEmployeeData.getPermissionAllowancePerMonth());
 
             // Strong password update handling:
             // If password is present and non-blank in payload, treat it as NEW raw password
@@ -511,6 +514,15 @@ public class EmployeeController {
             return "Employee code already exists";
         }
         return "Duplicate value exists";
+    }
+
+    private Double normalizeSalaryValue(Double salary) {
+        if (salary == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(salary)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     @PutMapping("/{id}/employee-code")
@@ -1003,6 +1015,7 @@ public class EmployeeController {
             masterEmployee.setShiftEndTime(sourceEmployee.getShiftEndTime());
             masterEmployee.setLeavePolicyType(sourceEmployee.getLeavePolicyType());
             masterEmployee.setCasualLeaveBalance(sourceEmployee.getCasualLeaveBalance());
+            masterEmployee.setPermissionAllowancePerMonth(sourceEmployee.getPermissionAllowancePerMonth());
             masterEmployee.setCompanyCode(sourceEmployee.getCompanyCode());
             masterEmployee.setEmployeeCode(sourceEmployee.getEmployeeCode());
             masterEmployee.setClientId(sourceEmployee.getClientId());
@@ -1052,6 +1065,7 @@ public class EmployeeController {
         snapshot.put("Shift End Time", safeText(employee.getShiftEndTime()));
         snapshot.put("Leave Policy", safeText(employee.getLeavePolicyType()));
         snapshot.put("Casual Leave Balance", safeText(employee.getCasualLeaveBalance()));
+        snapshot.put("Permission Allowance/Month", safeText(employee.getPermissionAllowancePerMonth()));
         snapshot.put("Employee Code", safeText(employee.getEmployeeCode()));
         snapshot.put("Username", safeText(employee.getUsername()));
         return snapshot;

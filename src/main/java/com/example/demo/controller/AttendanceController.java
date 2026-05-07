@@ -1131,6 +1131,7 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("absentCount", metrics.absentCount());
     response.put("presentCount", metrics.presentCount());
     response.put("workingDays", metrics.presentCount());
+    response.put("lateDays", metrics.monthlyLateDays());
     response.put("totalLateMinutes", metrics.monthlyLateMinutes());
     response.put("totalEarlyOutMinutes", metrics.monthlyEarlyOutMinutes());
     response.put("totalMissedTimes", metrics.totalMissedMinutes());
@@ -1138,8 +1139,8 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("totalApprovedPermissionsTaken", metrics.approvedPermissionCount());
     response.put("approvedPermissionCount", metrics.approvedPermissionCount());
     response.put("approvedPermissionMinutes", metrics.approvedPermissionMinutes());
-    response.put("maxPermissionsPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSIONS_PER_MONTH);
-    response.put("maxPermissionMinutesPerMonth", AttendanceMetricsService.MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH);
+    response.put("maxPermissionsPerMonth", attendanceMetricsService.resolveMaxApprovedPermissionsPerMonth(employee));
+    response.put("maxPermissionMinutesPerMonth", attendanceMetricsService.resolveMaxApprovedPermissionMinutesPerMonth(employee));
     response.put("daysInMonth", daysInMonth);
 
     return ResponseEntity.ok(response);

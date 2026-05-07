@@ -110,6 +110,9 @@ public class Employee {
     @Column(name = "casual_leave_balance")
     private Integer casualLeaveBalance;
 
+    @Column(name = "permission_allowance_per_month")
+    private Integer permissionAllowancePerMonth;
+
 @Column(name = "company_code")
     private String companyCode;
 
@@ -414,6 +417,14 @@ private LocalDateTime guestStartDate;
 
     public void setCasualLeaveBalance(Integer casualLeaveBalance) {
         this.casualLeaveBalance = casualLeaveBalance;
+    }
+
+    public Integer getPermissionAllowancePerMonth() {
+        return permissionAllowancePerMonth;
+    }
+
+    public void setPermissionAllowancePerMonth(Integer permissionAllowancePerMonth) {
+        this.permissionAllowancePerMonth = permissionAllowancePerMonth;
     }
 
 

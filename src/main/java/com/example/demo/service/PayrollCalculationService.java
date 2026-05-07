@@ -25,6 +25,7 @@ public class PayrollCalculationService {
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM_SS = DateTimeFormatter.ofPattern("H:mm:ss");
     private static final LocalTime DEFAULT_SHIFT_START = LocalTime.of(10, 0);
     private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(19, 0);
+    private static final String SWAP_WEEKOFF_TYPE = "swap weekoff";
 
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
@@ -65,10 +66,12 @@ public class PayrollCalculationService {
         Long effectiveClientId = clientIdOverride != null ? clientIdOverride : employee.getClientId();
         LocalDate firstDate = LocalDate.of(year, month, 1);
         LocalDate lastDate = firstDate.withDayOfMonth(firstDate.lengthOfMonth());
+        Set<LocalDate> approvedSwapWeekoffDates =
+                resolveApprovedSwapWeekoffDates(employeeId, month, year);
 
         LeavePolicy policy = resolveLeavePolicy(employee);
         Map<LocalDate, ShiftWindow> shiftWindowsByDate =
-                buildShiftWindows(employee, policy, firstDate, lastDate);
+                buildShiftWindows(employee, policy, firstDate, lastDate, approvedSwapWeekoffDates);
         Map<LocalDate, Integer> scheduledMinutesByDate = new HashMap<>();
         for (Map.Entry<LocalDate, ShiftWindow> entry : shiftWindowsByDate.entrySet()) {
             scheduledMinutesByDate.put(entry.getKey(), entry.getValue().minutes);
@@ -129,6 +132,8 @@ public class PayrollCalculationService {
         int paidCasualDays = 0;
         int unpaidCasualDays = 0;
         int workedDays = 0;
+        int absentDays = 0;
+        int absentMinutes = 0;
 
         int expectedMinutes = 0;
         int payableMinutes = 0;
@@ -142,6 +147,20 @@ public class PayrollCalculationService {
                 expectedMinutes += scheduledMinutes;
             }
 
+            WorkEntry workEntry = workSummary.workEntries.get(date);
+            int workedMinutes = workedMinutesByDate.getOrDefault(date, 0);
+            boolean hasWorkedMinutes = workedMinutes > 0;
+            if (hasWorkedMinutes) {
+                workedDays++;
+            }
+
+            if (scheduledMinutes <= 0) {
+                // Week-off day is paid by default. If the employee worked on week-off,
+                // count it as payable worked minutes (not absent).
+                payableMinutes += workedMinutes;
+                continue;
+            }
+
             Double holidayFraction = holidayFractionByDate.get(date);
             if (holidayFraction != null && holidayFraction > 0) {
                 if (holidayFraction >= 1.0) {
@@ -149,43 +168,40 @@ public class PayrollCalculationService {
                 } else {
                     holidayDaysHalf++;
                 }
-                // Holidays are not payable per current rule.
+                // Public holidays are paid leaves and do not count as absent.
                 continue;
             }
 
             if (leaveBuckets.paidLeaveDates.contains(date)) {
                 paidLeaveDays++;
-                // Approved leave is not payable per current rule.
                 continue;
             }
 
             if (leaveBuckets.unpaidLeaveDates.contains(date)) {
                 unpaidLeaveDays++;
+                absentDays++;
+                absentMinutes += Math.max(0, scheduledMinutes);
                 continue;
             }
 
             if (leaveBuckets.paidCasualDates.contains(date)) {
                 paidCasualDays++;
-                // Casual leave is not payable per current rule.
                 continue;
             }
 
             if (leaveBuckets.unpaidCasualDates.contains(date)) {
                 unpaidCasualDays++;
+                absentDays++;
+                absentMinutes += Math.max(0, scheduledMinutes);
                 continue;
             }
 
-            WorkEntry workEntry = workSummary.workEntries.get(date);
-            int workedMinutes = workedMinutesByDate.getOrDefault(date, 0);
-            if (workedMinutes > 0) {
-                workedDays++;
-            }
-
-            if (scheduledMinutes <= 0) {
-                // Week-off work counts as regular payable hours.
-                payableMinutes += workedMinutes;
+            if (!hasWorkedMinutes) {
+                absentDays++;
+                absentMinutes += Math.max(0, scheduledMinutes);
                 continue;
             }
+
             if (workEntry == null || workEntry.earliestTimeIn == null || workEntry.latestTimeOut == null) {
                 continue;
             }
@@ -208,9 +224,10 @@ public class PayrollCalculationService {
         double workedHours = minutesToHours(workedMinutesTotal);
         double overtimeHours = minutesToHours(overtimeMinutes);
         double salary = employee.getSalary() == null ? 0.0 : employee.getSalary();
-
-        double perHourSalary = expectedHours > 0 ? salary / expectedHours : 0.0;
-        double netSalary = expectedHours > 0 ? payableHours * perHourSalary : 0.0;
+        int daysInMonth = firstDate.lengthOfMonth();
+        double perMinuteSalary = expectedMinutes > 0 ? salary / expectedMinutes : 0.0;
+        double perHourSalary = perMinuteSalary * 60.0;
+        double netSalary = salary - (absentMinutes * perMinuteSalary);
         if (netSalary < 0) {
             netSalary = 0.0;
         }
@@ -221,7 +238,7 @@ public class PayrollCalculationService {
                 employeeId,
                 year,
                 month,
-                firstDate.lengthOfMonth(),
+                daysInMonth,
                 scheduledDays,
                 holidayDaysFull,
                 holidayDaysHalf,
@@ -230,9 +247,12 @@ public class PayrollCalculationService {
                 unpaidCasualDays,
                 unpaidLeaveDays,
                 workedDays,
+                absentDays,
+                absentMinutes,
                 expectedHours,
                 payableHours,
                 workedHours,
+                perMinuteSalary,
                 perHourSalary,
                 missingHours,
                 netSalary,
@@ -251,10 +271,12 @@ public class PayrollCalculationService {
         Long effectiveClientId = clientIdOverride != null ? clientIdOverride : employee.getClientId();
         LocalDate firstDate = LocalDate.of(year, month, 1);
         LocalDate lastDate = firstDate.withDayOfMonth(firstDate.lengthOfMonth());
+        Set<LocalDate> approvedSwapWeekoffDates =
+                resolveApprovedSwapWeekoffDates(employeeId, month, year);
 
         LeavePolicy policy = resolveLeavePolicy(employee);
         Map<LocalDate, ShiftWindow> shiftWindowsByDate =
-                buildShiftWindows(employee, policy, firstDate, lastDate);
+                buildShiftWindows(employee, policy, firstDate, lastDate, approvedSwapWeekoffDates);
         Map<LocalDate, Integer> scheduledMinutesByDate = new HashMap<>();
         for (Map.Entry<LocalDate, ShiftWindow> entry : shiftWindowsByDate.entrySet()) {
             scheduledMinutesByDate.put(entry.getKey(), entry.getValue().minutes);
@@ -590,6 +612,9 @@ public class PayrollCalculationService {
             return LeaveCategory.UNPAID;
         }
         String normalized = raw.trim().toUpperCase();
+        if (isSwapWeekoffType(raw)) {
+            return LeaveCategory.IGNORE;
+        }
         if (normalized.contains("PERMISSION")) {
             return LeaveCategory.IGNORE;
         }
@@ -706,18 +731,13 @@ public class PayrollCalculationService {
         }
 
         void applyCasualBalance(Map<LocalDate, Integer> scheduledMinutesByDate, int balance) {
-            int used = 0;
             for (LocalDate date : casualLeaveDates) {
                 Integer scheduledMinutes = scheduledMinutesByDate.get(date);
                 if (scheduledMinutes == null || scheduledMinutes <= 0) {
                     continue;
                 }
-                if (used < balance) {
-                    paidCasualDates.add(date);
-                    used++;
-                } else {
-                    unpaidCasualDates.add(date);
-                }
+                // Business rule: approved casual leaves are always paid.
+                paidCasualDates.add(date);
             }
         }
     }
@@ -748,7 +768,8 @@ public class PayrollCalculationService {
             Employee employee,
             LeavePolicy policy,
             LocalDate start,
-            LocalDate end) {
+            LocalDate end,
+            Set<LocalDate> approvedSwapWeekoffDates) {
         Map<AdditionalWorkingDayType, EmployeeAdditionalWorkingDay> additionalMap = new EnumMap<>(AdditionalWorkingDayType.class);
         if (employee.getAdditionalWorkingDays() != null) {
             for (EmployeeAdditionalWorkingDay day : employee.getAdditionalWorkingDays()) {
@@ -765,12 +786,19 @@ public class PayrollCalculationService {
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
             DayOfWeek dayOfWeek = date.getDayOfWeek();
             boolean isWeekOff = policy.isWeekOff(dayOfWeek);
+            boolean isSwapWeekoffDate =
+                    approvedSwapWeekoffDates != null && approvedSwapWeekoffDates.contains(date);
 
             EmployeeAdditionalWorkingDay override = resolveAdditionalOverride(
                     date,
                     saturdayIndex,
                     sundayIndex,
                     additionalMap);
+
+            if (isSwapWeekoffDate) {
+                schedule.put(date, new ShiftWindow(null, null, 0));
+                continue;
+            }
 
             if (override != null) {
                 LocalTime startTime = parseFlexibleTime(override.getTimeIn()).orElse(DEFAULT_SHIFT_START);
@@ -791,6 +819,29 @@ public class PayrollCalculationService {
             schedule.put(date, new ShiftWindow(startTime, endTime, minutes));
         }
         return schedule;
+    }
+
+    private Set<LocalDate> resolveApprovedSwapWeekoffDates(Long employeeId, int month, int year) {
+        if (employeeId == null) {
+            return Collections.emptySet();
+        }
+        List<LeavePermission> approvedLeaves =
+                leavePermissionRepository.findByEmployeeIdAndStatus(employeeId, "approved");
+        Set<LocalDate> swapWeekoffDates = new HashSet<>();
+        for (LeavePermission leave : approvedLeaves) {
+            if (!isSwapWeekoffType(leave.getLeaveType())) {
+                continue;
+            }
+            swapWeekoffDates.addAll(expandLeaveDates(leave, month, year));
+        }
+        return swapWeekoffDates;
+    }
+
+    private boolean isSwapWeekoffType(String leaveTypeRaw) {
+        if (leaveTypeRaw == null) {
+            return false;
+        }
+        return leaveTypeRaw.trim().toLowerCase(Locale.ROOT).equals(SWAP_WEEKOFF_TYPE);
     }
 
     private static class ShiftWindow {
@@ -841,15 +892,18 @@ public class PayrollCalculationService {
             int unpaidCasualDays,
             int unpaidLeaveDays,
             int workedDays,
+            int absentDays,
+            int absentMinutes,
             double expectedHours,
             double payableHours,
             double workedHours,
+            double perMinuteSalary,
             double perHourSalary,
             double missingHours,
             double netSalary,
             double overtimeHours) {
         public static PayrollResult empty() {
-            return new PayrollResult(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new PayrollResult(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

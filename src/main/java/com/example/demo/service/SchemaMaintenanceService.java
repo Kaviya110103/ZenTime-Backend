@@ -42,6 +42,7 @@ public class SchemaMaintenanceService {
     private void ensureEmployeeTableColumns() {
         ensureColumn("employee", "leave_policy_type", "VARCHAR(32) NULL");
         ensureColumn("employee", "casual_leave_balance", "INT DEFAULT 0");
+        ensureColumn("employee", "permission_allowance_per_month", "INT DEFAULT 0");
     }
 
     private void ensureAdditionalWorkingDaysTable() {
