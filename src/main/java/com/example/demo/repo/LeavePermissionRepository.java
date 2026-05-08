@@ -11,6 +11,7 @@ import java.util.List;
 
 public interface LeavePermissionRepository extends JpaRepository<LeavePermission, Long> {
     List<LeavePermission> findByEmployeeId(Long employeeId);
+    void deleteByEmployeeId(Long employeeId);
     List<LeavePermission> findByStatusIgnoreCase(String status);
     List<LeavePermission> findByEmployee_ClientId(Long clientId);
     List<LeavePermission> findByStatusIgnoreCaseAndEmployee_ClientId(String status, Long clientId);

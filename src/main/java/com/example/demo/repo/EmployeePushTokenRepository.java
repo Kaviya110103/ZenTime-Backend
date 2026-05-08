@@ -11,6 +11,8 @@ import com.example.demo.MODELS.EmployeePushToken;
 public interface EmployeePushTokenRepository extends JpaRepository<EmployeePushToken, Long> {
     Optional<EmployeePushToken> findByEmployeeIdAndToken(Long employeeId, String token);
 
+    void deleteByEmployeeId(Long employeeId);
+
     List<EmployeePushToken> findByEmployeeId(Long employeeId);
 
     @Query("select t.token from EmployeePushToken t")

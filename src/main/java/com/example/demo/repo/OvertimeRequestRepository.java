@@ -11,6 +11,7 @@ import java.util.Optional;
 @Repository
 public interface OvertimeRequestRepository extends JpaRepository<OvertimeRequest, Long> {
     Optional<OvertimeRequest> findFirstByEmployeeIdAndDateOrderByIdDesc(Long employeeId, String date);
+    void deleteByEmployeeId(Long employeeId);
 
     List<OvertimeRequest> findByEmployeeIdAndStatus(Long employeeId, OvertimeRequestStatus status);
 

@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface EmployeeAdditionalWorkingDayRepository extends JpaRepository<EmployeeAdditionalWorkingDay, Long> {
     List<EmployeeAdditionalWorkingDay> findByEmployee_Id(Long employeeId);
+    void deleteByEmployee_Id(Long employeeId);
 }

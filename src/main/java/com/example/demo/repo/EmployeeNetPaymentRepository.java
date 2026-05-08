@@ -6,5 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface EmployeeNetPaymentRepository extends JpaRepository<EmployeeNetPayment, Long> {
+    void deleteByEmployee_Id(Long employeeId);
     // You can add custom query methods here if needed
 }

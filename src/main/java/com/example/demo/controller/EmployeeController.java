@@ -570,33 +570,50 @@ public class EmployeeController {
 
     // Delete Employee by ID
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteEmployeeById(
+    public ResponseEntity<Object> deleteEmployeeById(
             @PathVariable Long id,
             @RequestParam(value = "clientId", required = false) Long clientId,
             @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
-        Long effectiveClientId = resolveClientId(clientId, headerClientId);
-        if (effectiveClientId != null) {
-            Optional<Employee> employeeOptional = employeeRepository.findByIdAndClientId(id, effectiveClientId);
-            if (employeeOptional.isEmpty()) {
+        try {
+            Long effectiveClientId = resolveClientId(clientId, headerClientId);
+            if (effectiveClientId != null) {
+                Optional<Employee> employeeOptional = employeeRepository.findByIdAndClientId(id, effectiveClientId);
+                if (employeeOptional.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
+            } else if (!employeeRepository.existsById(id)) {
                 return ResponseEntity.notFound().build();
             }
-            employeeRepository.delete(employeeOptional.get());
+            employeeService.deleteEmployeeById(id);
             return ResponseEntity.noContent().build();
+        } catch (DataIntegrityViolationException ex) {
+            logger.warn("Failed to delete employeeId={} due to data integrity constraints", id, ex);
+            String message = ex.getMostSpecificCause() != null
+                    ? ex.getMostSpecificCause().getMessage()
+                    : ex.getMessage();
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(message == null ? "Unable to delete employee due to dependent records" : message);
         }
-        employeeService.deleteEmployeeById(id);
-        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/delete/{username}")
-    public ResponseEntity<Void> deleteEmployeeByUsername(@PathVariable String username) {
+    public ResponseEntity<Object> deleteEmployeeByUsername(@PathVariable String username) {
         Optional<Employee> employeeOptional = employeeRepository.findByUsername(username);
 
         if (employeeOptional.isPresent()) {
-            employeeRepository.delete(employeeOptional.get());  // Delete the employee
-            return ResponseEntity.noContent().build();  // Return 204 No Content after successful deletion
-        } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();  // Return 404 if employee not found
+            try {
+                employeeService.deleteEmployeeById(employeeOptional.get().getId());
+                return ResponseEntity.noContent().build();  // Return 204 No Content after successful deletion
+            } catch (DataIntegrityViolationException ex) {
+                logger.warn("Failed to delete employee username={} due to data integrity constraints", username, ex);
+                String message = ex.getMostSpecificCause() != null
+                        ? ex.getMostSpecificCause().getMessage()
+                        : ex.getMessage();
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(message == null ? "Unable to delete employee due to dependent records" : message);
+            }
         }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");  // Return 404 if employee not found
     }
 
     // Upload or update profile image URL

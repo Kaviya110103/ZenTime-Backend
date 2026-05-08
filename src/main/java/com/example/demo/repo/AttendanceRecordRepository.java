@@ -22,6 +22,7 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
     List<AttendanceRecord> findByDate(String date);
     List<AttendanceRecord> findByEmployeeIdAndDateBetween(Long employeeId, String startDate, String endDate);
     List<AttendanceRecord> findByEmployeeId(Long employeeId);
+    void deleteByEmployeeId(Long employeeId);
         Optional<AttendanceRecord> findByDateAndEmployeeId(String date, Long employeeId);
 List<AttendanceRecord> findByEmployeeIdOrderByIdDesc(Long employeeId);
     List<AttendanceRecord> findByDateAndAttendanceStatus(String date, String attendanceStatus);

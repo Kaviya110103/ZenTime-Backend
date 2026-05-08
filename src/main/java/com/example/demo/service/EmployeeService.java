@@ -1,21 +1,49 @@
 package com.example.demo.service;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.demo.MODELS.AttendanceRecord;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.EmployeeNetPayment;
 import com.example.demo.repo.AttendanceRecordRepository;
+import com.example.demo.repo.EmployeeAdditionalWorkingDayRepository;
+import com.example.demo.repo.EmployeeNetPaymentRepository;
+import com.example.demo.repo.EmployeePushTokenRepository;
 import com.example.demo.repo.EmployeeRepository;
+import com.example.demo.repo.EmployeeSalaryDetailsRepository;
+import com.example.demo.repo.LeavePermissionRepository;
+import com.example.demo.repo.LocationRequestRepository;
+import com.example.demo.repo.OvertimeRequestRepository;
 
 @Service
 public class EmployeeService {
+    private static final Logger logger = LoggerFactory.getLogger(EmployeeService.class);
+    private static final List<String> EMPLOYEE_CHILD_TABLE_PRIORITY = List.of(
+            "leave_permission",
+            "location_requests",
+            "overtime_request",
+            "employee_push_tokens",
+            "employee_net_payment",
+            "employee_additional_working_day",
+            "attendance_record"
+    );
 
     @Autowired
     private EmployeeRepository employeeRepository;
@@ -31,6 +59,30 @@ public class EmployeeService {
 
     @Autowired
     private SchemaMaintenanceService schemaMaintenanceService;
+
+    @Autowired
+    private LeavePermissionRepository leavePermissionRepository;
+
+    @Autowired
+    private EmployeeAdditionalWorkingDayRepository employeeAdditionalWorkingDayRepository;
+
+    @Autowired
+    private OvertimeRequestRepository overtimeRequestRepository;
+
+    @Autowired
+    private LocationRequestRepository locationRequestRepository;
+
+    @Autowired
+    private EmployeePushTokenRepository employeePushTokenRepository;
+
+    @Autowired
+    private EmployeeNetPaymentRepository employeeNetPaymentRepository;
+
+    @Autowired
+    private EmployeeSalaryDetailsRepository employeeSalaryDetailsRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     // Create or Update
     public Employee saveEmployee(Employee employee) {
@@ -118,8 +170,149 @@ public class EmployeeService {
     }
 
     // Delete by ID
+    @Transactional
     public void deleteEmployeeById(Long id) {
+        schemaMaintenanceService.ensureEmployeeSchema();
+
+        purgeSecondLevelReferencesByEmployee("attendance_record", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("leave_permission", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("location_requests", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("overtime_request", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("employee_push_tokens", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("employee_net_payment", "id", "employee_id", id);
+        purgeSecondLevelReferencesByEmployee("employee_additional_working_day", "id", "employee_id", id);
+
+        purgeDirectEmployeeReferences(id);
+
+        // Compatibility cleanup for legacy schemas that store employeeId without FK.
+        employeeSalaryDetailsRepository.deleteByEmployeeId(id);
+
         employeeRepository.deleteById(id);
+    }
+
+    private void purgeDirectEmployeeReferences(Long employeeId) {
+        List<FkReference> references = findFkReferencesTo("employee", "id");
+        if (references.isEmpty()) {
+            return;
+        }
+
+        references.sort(Comparator
+                .comparingInt((FkReference ref) -> tablePriority(ref.tableName))
+                .thenComparing(ref -> ref.tableName)
+                .thenComparing(ref -> ref.columnName));
+
+        Map<String, Set<String>> tableColumns = new LinkedHashMap<>();
+        for (FkReference reference : references) {
+            tableColumns.computeIfAbsent(reference.tableName, key -> new LinkedHashSet<>())
+                    .add(reference.columnName);
+        }
+
+        Set<String> pendingTables = new LinkedHashSet<>(tableColumns.keySet());
+        DataIntegrityViolationException lastFailure = null;
+        int maxPasses = pendingTables.size() + 3;
+
+        for (int pass = 0; pass < maxPasses && !pendingTables.isEmpty(); pass++) {
+            boolean progressed = false;
+            for (String tableName : new ArrayList<>(pendingTables)) {
+                try {
+                    deleteByEmployeeColumns(tableName, tableColumns.get(tableName), employeeId);
+                    pendingTables.remove(tableName);
+                    progressed = true;
+                } catch (DataIntegrityViolationException ex) {
+                    lastFailure = ex;
+                    logger.debug(
+                            "Deferring cleanup for table {} while deleting employeeId={} due to nested FK dependency",
+                            tableName, employeeId);
+                }
+            }
+            if (!progressed) {
+                break;
+            }
+        }
+
+        if (!pendingTables.isEmpty()) {
+            throw new DataIntegrityViolationException(
+                    "Unable to delete dependent rows for employeeId=" + employeeId
+                            + ". Pending FK tables: " + pendingTables,
+                    lastFailure);
+        }
+    }
+
+    private void deleteByEmployeeColumns(String tableName, Set<String> employeeFkColumns, Long employeeId) {
+        if (employeeFkColumns == null || employeeFkColumns.isEmpty()) {
+            return;
+        }
+        String quotedTable = quoteIdentifier(tableName);
+        for (String columnName : employeeFkColumns) {
+            String sql = "DELETE FROM " + quotedTable + " WHERE " + quoteIdentifier(columnName) + " = ?";
+            jdbcTemplate.update(sql, employeeId);
+        }
+    }
+
+    private void purgeSecondLevelReferencesByEmployee(
+            String parentTable,
+            String parentPrimaryKeyColumn,
+            String parentEmployeeColumn,
+            Long employeeId) {
+
+        List<FkReference> childReferences = findFkReferencesTo(parentTable, parentPrimaryKeyColumn);
+        if (childReferences.isEmpty()) {
+            return;
+        }
+
+        String quotedParent = quoteIdentifier(parentTable);
+        String quotedParentPk = quoteIdentifier(parentPrimaryKeyColumn);
+        String quotedParentEmployee = quoteIdentifier(parentEmployeeColumn);
+
+        for (FkReference childRef : childReferences) {
+            String quotedChild = quoteIdentifier(childRef.tableName);
+            String quotedChildFk = quoteIdentifier(childRef.columnName);
+            String sql = "DELETE child FROM " + quotedChild + " child "
+                    + "JOIN " + quotedParent + " parent ON child." + quotedChildFk + " = parent." + quotedParentPk + " "
+                    + "WHERE parent." + quotedParentEmployee + " = ?";
+            jdbcTemplate.update(sql, employeeId);
+        }
+    }
+
+    private List<FkReference> findFkReferencesTo(String referencedTable, String referencedColumn) {
+        String sql = """
+                SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME
+                FROM information_schema.KEY_COLUMN_USAGE kcu
+                WHERE kcu.CONSTRAINT_SCHEMA = DATABASE()
+                  AND LOWER(kcu.REFERENCED_TABLE_NAME) = LOWER(?)
+                  AND LOWER(kcu.REFERENCED_COLUMN_NAME) = LOWER(?)
+                  AND LOWER(kcu.TABLE_NAME) <> LOWER(?)
+                ORDER BY kcu.TABLE_NAME, kcu.ORDINAL_POSITION
+                """;
+
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> new FkReference(rs.getString("TABLE_NAME"), rs.getString("COLUMN_NAME")),
+                referencedTable,
+                referencedColumn,
+                referencedTable);
+    }
+
+    private int tablePriority(String tableName) {
+        int idx = EMPLOYEE_CHILD_TABLE_PRIORITY.indexOf(tableName == null ? "" : tableName.toLowerCase());
+        return idx >= 0 ? idx : Integer.MAX_VALUE;
+    }
+
+    private String quoteIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("Unsafe SQL identifier: " + identifier);
+        }
+        return "`" + identifier.replace("`", "``") + "`";
+    }
+
+    private static final class FkReference {
+        private final String tableName;
+        private final String columnName;
+
+        private FkReference(String tableName, String columnName) {
+            this.tableName = tableName;
+            this.columnName = columnName;
+        }
     }
 
     public void updateMissedTimes(AttendanceRecord record) {

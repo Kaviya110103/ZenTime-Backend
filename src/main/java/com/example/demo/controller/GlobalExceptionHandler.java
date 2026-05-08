@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -97,6 +99,20 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT, message, request.getRequestURI());
     }
 
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResourceFound(
+            NoResourceFoundException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.NOT_FOUND, "Endpoint not found", request.getRequestURI());
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoHandlerFound(
+            NoHandlerFoundException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.NOT_FOUND, "Endpoint not found", request.getRequestURI());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(
             Exception ex,
@@ -151,4 +167,3 @@ public class GlobalExceptionHandler {
         return rawMessage;
     }
 }
-
