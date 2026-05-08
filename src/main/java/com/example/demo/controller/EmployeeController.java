@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.ArrayList;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,8 +46,10 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.example.demo.MODELS.EmailDetails;
+import com.example.demo.MODELS.AdditionalWorkingDayType;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.EmployeeAdditionalWorkingDay;
+import com.example.demo.repo.EmployeeAdditionalWorkingDayRepository;
 import com.example.demo.MODELS.EmployeeNetPayment;
 import com.example.demo.repo.EmployeeNetPaymentRepository;
 import com.example.demo.repo.EmployeeRepository;
@@ -66,6 +70,7 @@ public class EmployeeController {
     private final EmployeeService employeeService;
     private final EmployeeNetPaymentRepository employeeNetPaymentRepository;
     private final EmployeeRepository employeeRepository;
+    private final EmployeeAdditionalWorkingDayRepository employeeAdditionalWorkingDayRepository;
     private final JdbcTemplate masterJdbcTemplate;
     private final EmailService emailService;
     private final PushNotificationService pushNotificationService;
@@ -73,6 +78,7 @@ public class EmployeeController {
 
     public EmployeeController(PasswordEncoder passwordEncoder, EmployeeService employeeService,
             EmployeeNetPaymentRepository employeeNetPaymentRepository, EmployeeRepository employeeRepository,
+            EmployeeAdditionalWorkingDayRepository employeeAdditionalWorkingDayRepository,
             @org.springframework.beans.factory.annotation.Qualifier("masterDataSource") DataSource masterDataSource,
             EmailService emailService,
             PushNotificationService pushNotificationService,
@@ -81,6 +87,7 @@ public class EmployeeController {
         this.employeeService = employeeService;
         this.employeeNetPaymentRepository = employeeNetPaymentRepository;
         this.employeeRepository = employeeRepository;
+        this.employeeAdditionalWorkingDayRepository = employeeAdditionalWorkingDayRepository;
         this.masterJdbcTemplate = new JdbcTemplate(masterDataSource);
         this.emailService = emailService;
         this.pushNotificationService = pushNotificationService;
@@ -239,6 +246,93 @@ public class EmployeeController {
         return employeeOptional
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/additional-working-days")
+    public ResponseEntity<?> getAdditionalWorkingDays(
+            @PathVariable String id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        String tenantDb = resolveTenantDbByClientId(effectiveClientId);
+        if (tenantDb != null && !tenantDb.isBlank()) {
+            TenantContext.setTenantDb(tenantDb);
+        }
+
+        try {
+            Optional<Employee> employeeOptional = resolveEmployeeByIdOrCode(id, effectiveClientId);
+            if (employeeOptional.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+            }
+
+            Employee employee = employeeOptional.get();
+            List<Map<String, Object>> response = safeBuildAdditionalWorkingDaysPayload(employee.getId());
+
+            // Fallback to master records for legacy employees when tenant has no rows.
+            if (response.isEmpty() && tenantDb != null && !tenantDb.isBlank()) {
+                TenantContext.clear();
+                Optional<Employee> masterEmployeeOptional = resolveEmployeeByIdOrCode(id, effectiveClientId);
+                if (masterEmployeeOptional.isPresent()) {
+                    response = safeBuildAdditionalWorkingDaysPayload(masterEmployeeOptional.get().getId());
+                }
+            }
+
+            return ResponseEntity.ok(response);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @PutMapping("/{id}/additional-working-days")
+    @Transactional
+    public ResponseEntity<?> updateAdditionalWorkingDays(
+            @PathVariable String id,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId,
+            @RequestBody(required = false) List<AdditionalWorkingDayRequest> additionalWorkingDays) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        String tenantDb = resolveTenantDbByClientId(effectiveClientId);
+        if (tenantDb != null && !tenantDb.isBlank()) {
+            TenantContext.setTenantDb(tenantDb);
+        }
+
+        try {
+            schemaMaintenanceService.ensureEmployeeSchema();
+            Optional<Employee> employeeOptional = resolveEmployeeByIdOrCode(id, effectiveClientId);
+            if (employeeOptional.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");
+            }
+
+            Employee employee = employeeOptional.get();
+            employeeAdditionalWorkingDayRepository.deleteByEmployee_Id(employee.getId());
+
+            if (additionalWorkingDays != null) {
+                for (AdditionalWorkingDayRequest day : additionalWorkingDays) {
+                    if (day == null || day.dayType == null || day.dayType.trim().isEmpty()) {
+                        continue;
+                    }
+                    AdditionalWorkingDayType parsedType = parseAdditionalWorkingDayType(day.dayType);
+                    if (parsedType == null) {
+                        continue;
+                    }
+                    EmployeeAdditionalWorkingDay row = new EmployeeAdditionalWorkingDay();
+                    row.setEmployee(employee);
+                    row.setDayType(parsedType);
+                    row.setTimeIn(day.timeIn == null ? null : day.timeIn.trim());
+                    row.setTimeOut(day.timeOut == null ? null : day.timeOut.trim());
+                    employeeAdditionalWorkingDayRepository.save(row);
+                }
+            }
+
+            Employee saved = employeeRepository.findById(employee.getId()).orElse(employee);
+            mirrorEmployeeProfileToMaster(saved);
+
+            List<Map<String, Object>> response = safeBuildAdditionalWorkingDaysPayload(employee.getId());
+
+            return ResponseEntity.ok(response);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     // Get Employee by Username
@@ -620,19 +714,34 @@ public class EmployeeController {
     @PutMapping("/{id}/profile-image")
     public ResponseEntity<Employee> updateProfileImage(
             @PathVariable Long id,
-            @RequestParam("imageUrl") String imageUrl) {
+            @RequestParam("imageUrl") String imageUrl,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
 
-        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
-
-        if (!optionalEmployee.isPresent()) {
-            return ResponseEntity.notFound().build();
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        String tenantDb = resolveTenantDbByClientId(effectiveClientId);
+        if (tenantDb != null && !tenantDb.isBlank()) {
+            TenantContext.setTenantDb(tenantDb);
         }
 
-        Employee employee = optionalEmployee.get();
-        employee.setProfileImage(imageUrl);
-        employeeRepository.save(employee);
+        Optional<Employee> optionalEmployee = effectiveClientId != null
+                ? employeeRepository.findByIdAndClientId(id, effectiveClientId)
+                : employeeRepository.findById(id);
 
-        return ResponseEntity.ok(employee);
+        if (!optionalEmployee.isPresent()) {
+            TenantContext.clear();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        try {
+            Employee employee = optionalEmployee.get();
+            employee.setProfileImage(imageUrl);
+            employeeRepository.save(employee);
+            mirrorEmployeeProfileToMaster(employee);
+            return ResponseEntity.ok(employee);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     // Delete profile image (set to null or default)
@@ -770,9 +879,22 @@ public class EmployeeController {
 
     // Upload image
     @PutMapping("/{id}/upload-image")
-    public ResponseEntity<Object> uploadImage(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
-        Optional<Employee> optionalEmployee = employeeRepository.findById(id);
+    public ResponseEntity<Object> uploadImage(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "clientId", required = false) Long clientId,
+            @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
+        Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        String tenantDb = resolveTenantDbByClientId(effectiveClientId);
+        if (tenantDb != null && !tenantDb.isBlank()) {
+            TenantContext.setTenantDb(tenantDb);
+        }
+
+        Optional<Employee> optionalEmployee = effectiveClientId != null
+                ? employeeRepository.findByIdAndClientId(id, effectiveClientId)
+                : employeeRepository.findById(id);
         if (!optionalEmployee.isPresent()) {
+            TenantContext.clear();
             return ResponseEntity.notFound().build();
         }
 
@@ -782,10 +904,13 @@ public class EmployeeController {
             Employee employee = optionalEmployee.get();
             employee.setProfileImage(imageUrl);
             employeeRepository.save(employee);
+            mirrorEmployeeProfileToMaster(employee);
 
             return ResponseEntity.ok(imageUrl);
         } catch (IOException e) {
             return ResponseEntity.status(500).body("Upload failed");
+        } finally {
+            TenantContext.clear();
         }
     }
 
@@ -1179,6 +1304,75 @@ public class EmployeeController {
         } catch (NumberFormatException ignored) {
             return Optional.empty();
         }
+    }
+
+    private String formatAdditionalWorkingDayLabel(String rawType) {
+        if (rawType == null || rawType.isBlank()) {
+            return "Additional Working Day";
+        }
+        String cleaned = rawType.trim().toLowerCase().replace("_", " ");
+        String[] words = cleaned.split("\\s+");
+        StringBuilder label = new StringBuilder();
+        for (String word : words) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (label.length() > 0) {
+                label.append(" ");
+            }
+            label.append(Character.toUpperCase(word.charAt(0)));
+            if (word.length() > 1) {
+                label.append(word.substring(1));
+            }
+        }
+        return label.toString();
+    }
+
+    private List<Map<String, Object>> buildAdditionalWorkingDaysPayload(Long employeeId) {
+        if (employeeId == null) {
+            return List.of();
+        }
+        List<EmployeeAdditionalWorkingDayRepository.AdditionalWorkingDayRaw> rows =
+                employeeAdditionalWorkingDayRepository.findRawByEmployeeId(employeeId);
+        return rows.stream()
+                .map(day -> {
+                    Map<String, Object> item = new java.util.LinkedHashMap<>();
+                    String rawType = day.getDayType() == null ? "" : day.getDayType().trim().toUpperCase();
+                    item.put("dayType", rawType);
+                    item.put("label", formatAdditionalWorkingDayLabel(rawType));
+                    item.put("timeIn", day.getTimeIn());
+                    item.put("timeOut", day.getTimeOut());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private List<Map<String, Object>> safeBuildAdditionalWorkingDaysPayload(Long employeeId) {
+        try {
+            return buildAdditionalWorkingDaysPayload(employeeId);
+        } catch (Exception ex) {
+            logger.warn("Failed to build additional working days payload for employeeId={}", employeeId, ex);
+            return List.of();
+        }
+    }
+
+    private AdditionalWorkingDayType parseAdditionalWorkingDayType(String rawType) {
+        if (rawType == null || rawType.isBlank()) {
+            return null;
+        }
+        String normalized = rawType.trim().toUpperCase().replace(" ", "_");
+        try {
+            return AdditionalWorkingDayType.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            logger.warn("Ignoring unsupported additional working day type: {}", rawType);
+            return null;
+        }
+    }
+
+    public static class AdditionalWorkingDayRequest {
+        public String dayType;
+        public String timeIn;
+        public String timeOut;
     }
 }
 

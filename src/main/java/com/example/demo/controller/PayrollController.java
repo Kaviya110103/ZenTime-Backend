@@ -63,7 +63,10 @@ public class PayrollController {
             @RequestParam int year,
             @RequestParam(required = false) Long clientId,
             @RequestParam(required = false, defaultValue = "false") boolean debug) {
-        Employee employee = employeeRepository.findById(employeeId).orElse(null);
+        Optional<Employee> employeeOpt = clientId == null
+                ? employeeRepository.findById(employeeId)
+                : employeeRepository.findByIdAndClientId(employeeId, clientId);
+        Employee employee = employeeOpt.orElse(null);
         if (employee == null) {
             return ResponseEntity.badRequest().body("Employee not found");
         }
@@ -101,10 +104,12 @@ public class PayrollController {
         response.put("position", employee.getPosition());
         response.put("branch", employee.getBranch());
         response.put("email", employee.getEmail());
+        response.put("profileImage", employee.getProfileImage());
+        response.put("leavePolicyType", employee.getLeavePolicyType());
         response.put("weekOffDay", employee.getWeekOff());
         response.put("shiftStartTime", employee.getShiftStartTime());
         response.put("shiftEndTime", employee.getShiftEndTime());
-        response.put("additionalWorkingDays", buildAdditionalWorkingDaysResponse(employee.getId()));
+        response.put("additionalWorkingDays", buildAdditionalWorkingDaysResponse(employee));
         response.put("month", month);
         response.put("year", year);
         response.put("salary", salary);
@@ -283,13 +288,18 @@ public class PayrollController {
         return number == null ? 0 : number.intValue();
     }
 
-    private List<Map<String, Object>> buildAdditionalWorkingDaysResponse(Long employeeId) {
-        List<EmployeeAdditionalWorkingDay> additionalDays =
-                employeeAdditionalWorkingDayRepository.findByEmployee_Id(employeeId);
-        return additionalDays.stream()
+    private List<Map<String, Object>> buildAdditionalWorkingDaysResponse(Employee employee) {
+        Long employeeId = employee == null ? null : employee.getId();
+        if (employeeId == null) {
+            return List.of();
+        }
+
+        List<EmployeeAdditionalWorkingDayRepository.AdditionalWorkingDayRaw> rows =
+                employeeAdditionalWorkingDayRepository.findRawByEmployeeId(employeeId);
+        return rows.stream()
                 .map(day -> {
                     Map<String, Object> item = new HashMap<>();
-                    String rawType = day.getDayType() == null ? "" : day.getDayType().name();
+                    String rawType = day.getDayType() == null ? "" : day.getDayType().trim().toUpperCase();
                     item.put("dayType", rawType);
                     item.put("label", formatAdditionalWorkingDayLabel(rawType));
                     item.put("timeIn", day.getTimeIn());

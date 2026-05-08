@@ -20,15 +20,21 @@ public class SchemaMaintenanceService {
         if (dbName == null) {
             return;
         }
-        if (ensuredSchemas.putIfAbsent(dbName, Boolean.TRUE) != null) {
+        if (Boolean.TRUE.equals(ensuredSchemas.get(dbName))) {
             return;
         }
 
-        ensureEmployeeTableColumns();
-        ensureAdditionalWorkingDaysTable();
-        ensureEmployeeSalaryDetailsTableColumns();
-        ensureAttendanceRecordColumns();
-        ensureOvertimeRequestTable();
+        try {
+            ensureEmployeeTableColumns();
+            ensureAdditionalWorkingDaysTable();
+            ensureEmployeeSalaryDetailsTableColumns();
+            ensureAttendanceRecordColumns();
+            ensureOvertimeRequestTable();
+            ensuredSchemas.put(dbName, Boolean.TRUE);
+        } catch (RuntimeException ex) {
+            ensuredSchemas.remove(dbName);
+            throw ex;
+        }
     }
 
     private String resolveDatabaseName() {
