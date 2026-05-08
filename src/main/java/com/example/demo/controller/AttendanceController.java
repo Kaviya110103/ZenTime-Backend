@@ -180,10 +180,12 @@ public ResponseEntity<?> submitTimeoutReason(@RequestParam Long recordId, @Reque
 @GetMapping("/missed-timeout")
 public List<Map<String, Object>> getMissedTimeoutEmployees(
         @RequestParam(value = "clientId", required = false) Long clientId) {
-    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present");
+    List<AttendanceRecord> records = clientId == null
+            ? attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present")
+            : attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId("Present", clientId);
     List<Map<String, Object>> result = new ArrayList<>();
     for (AttendanceRecord record : records) {
-        if (clientId != null && (record.getEmployee() == null || !clientId.equals(record.getEmployee().getClientId()))) {
+        if (record.getEmployee() == null) {
             continue;
         }
         Map<String, Object> map = new HashMap<>();
@@ -197,6 +199,15 @@ public List<Map<String, Object>> getMissedTimeoutEmployees(
         result.add(map);
     }
     return result;
+}
+
+@GetMapping("/missed-timeout/count")
+public ResponseEntity<Long> getMissedTimeoutCount(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    long count = clientId == null
+            ? attendanceRecordRepository.countByAttendanceStatusAndTimeOutIsNull("Present")
+            : attendanceRecordRepository.countByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId("Present", clientId);
+    return ResponseEntity.ok(count);
 }
 
 @GetMapping("/completed-missed-timeout")
@@ -882,23 +893,28 @@ public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employ
 public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails(
         @RequestParam(value = "clientId", required = false) Long clientId) {
     String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    
-    List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
+    List<AttendanceRecord> records = attendanceRecordRepository
+            .findTodayPresentTimeInByDateAndClient(today, clientId);
 
-    // Filter only Present records with non-null Time In
     List<Map<String, Object>> result = records.stream()
-        .filter(record -> 
-            "Present".equalsIgnoreCase(record.getAttendanceStatus()) &&
-            record.getTimeIn() != null &&
-            (clientId == null || (record.getEmployee() != null && clientId.equals(record.getEmployee().getClientId())))
-        )
+        .filter(record -> record.getEmployee() != null)
         .map(record -> {
+            String firstName = record.getEmployee().getFirstName() == null ? "" : record.getEmployee().getFirstName().trim();
+            String lastName = record.getEmployee().getLastName() == null ? "" : record.getEmployee().getLastName().trim();
+            String fullName = (firstName + " " + lastName).trim();
             Map<String, Object> map = new HashMap<>();
             map.put("employeeId", record.getEmployee().getId());
-            map.put("name", record.getEmployee().getFirstName());
+            map.put("firstName", firstName);
+            map.put("lastName", lastName);
+            map.put("name", fullName.isEmpty() ? firstName : fullName);
             map.put("branch", record.getEmployee().getBranch());
+            map.put("mobile", record.getEmployee().getMobile());
             map.put("profileImage", record.getEmployee().getProfileImage());
             map.put("timeIn", record.getTimeIn());
+            map.put("timeOut", record.getTimeOut());
+            map.put("locationIn", record.getLocation());
+            map.put("locationOut", record.getLocation());
+            map.put("hasCheckedOut", record.getTimeOut() != null);
             map.put("status", record.getAttendanceStatus());
             return map;
         })
@@ -910,48 +926,56 @@ public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails(
 @GetMapping("/today-absent")
 public List<Map<String, Object>> getTodayAbsent(
         @RequestParam(value = "clientId", required = false) Long clientId) {
-    try {
-        // Keep today's absent list fresh even when scheduler was missed/restarted.
-        attendanceSchedulerService.runAutoAbsentForToday();
-    } catch (Exception ex) {
-        System.out.println("today-absent auto-sync skipped: " + ex.getMessage());
-    }
-
-    List<AttendanceRecord> absentRecords = attendanceService.getTodayAbsentRecords();
+    List<AttendanceRecord> absentRecords = attendanceService.getTodayAbsentRecords(clientId);
 
     return absentRecords.stream()
-    .filter(record -> clientId == null || (record.getEmployee() != null && clientId.equals(record.getEmployee().getClientId())))
+    .filter(record -> record.getEmployee() != null)
     .map(record -> {
+        String firstName = record.getEmployee().getFirstName() == null ? "" : record.getEmployee().getFirstName().trim();
+        String lastName = record.getEmployee().getLastName() == null ? "" : record.getEmployee().getLastName().trim();
+        String fullName = (firstName + " " + lastName).trim();
         Map<String, Object> map = new HashMap<>();
         map.put("id", record.getEmployee().getId());
-        map.put("name", record.getEmployee().getFirstName());
+        map.put("name", fullName.isEmpty() ? firstName : fullName);
+        map.put("firstName", firstName);
+        map.put("lastName", lastName);
         map.put("branch", record.getEmployee().getBranch());
         map.put("mobile", record.getEmployee().getMobile());
         map.put("date", record.getDate());
         return map;
     }).collect(Collectors.toList());
 }
+
+@GetMapping("/today-absent/count")
+public ResponseEntity<Long> getTodayAbsentCount(
+        @RequestParam(value = "clientId", required = false) Long clientId) {
+    return ResponseEntity.ok(attendanceService.countTodayAbsentRecords(clientId));
+}
 @GetMapping("/today-time-in-late")
 public ResponseEntity<List<Map<String, Object>>> getTodayTimeInLateDetails(
         @RequestParam(value = "clientId", required = false) Long clientId) {
     String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    List<AttendanceRecord> records = attendanceRecordRepository.findAllTimeInByDate(today);
+    List<AttendanceRecord> records = attendanceRecordRepository
+            .findTodayPresentTimeInByDateAndClient(today, clientId);
 
     List<Map<String, Object>> result = records.stream()
         .filter(record -> {
             if (record.getTimeIn() != null && record.getEmployee() != null) {
-                if (clientId != null && !clientId.equals(record.getEmployee().getClientId())) {
-                    return false;
-                }
                 return attendanceMetricsService.calculateDailyLateMinutes(record) > 0;
             }
             return false;
         })
         .map(record -> {
+            String firstName = record.getEmployee().getFirstName() == null ? "" : record.getEmployee().getFirstName().trim();
+            String lastName = record.getEmployee().getLastName() == null ? "" : record.getEmployee().getLastName().trim();
+            String fullName = (firstName + " " + lastName).trim();
             Map<String, Object> map = new HashMap<>();
             map.put("employeeId", record.getEmployee().getId());
-            map.put("name", record.getEmployee().getFirstName());
+            map.put("firstName", firstName);
+            map.put("lastName", lastName);
+            map.put("name", fullName.isEmpty() ? firstName : fullName);
             map.put("branch", record.getEmployee().getBranch());
+            map.put("mobile", record.getEmployee().getMobile());
             map.put("profileImage", record.getEmployee().getProfileImage());
             map.put("timeIn", record.getTimeIn());
             map.put("status", record.getAttendanceStatus());

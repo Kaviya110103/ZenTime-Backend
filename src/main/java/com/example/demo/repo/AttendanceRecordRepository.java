@@ -47,6 +47,29 @@ List<AttendanceRecord> findTodayAbsent(@Param("today") String today);
 
 
 List<AttendanceRecord> findByAttendanceStatusAndTimeOutIsNull(String attendanceStatus);
+long countByAttendanceStatusAndTimeOutIsNull(String attendanceStatus);
+long countByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId(String attendanceStatus, Long clientId);
+List<AttendanceRecord> findByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId(String attendanceStatus, Long clientId);
+
+@Query("SELECT a FROM AttendanceRecord a WHERE a.date = :date AND a.timeIn IS NOT NULL AND a.attendanceStatus = 'Present' " +
+       "AND (:clientId IS NULL OR (a.employee IS NOT NULL AND a.employee.clientId = :clientId))")
+List<AttendanceRecord> findTodayPresentTimeInByDateAndClient(
+        @Param("date") String date,
+        @Param("clientId") Long clientId);
+
+@Query("SELECT a FROM AttendanceRecord a WHERE a.attendanceStatus = :status AND a.date IN :dates " +
+       "AND (:clientId IS NULL OR (a.employee IS NOT NULL AND a.employee.clientId = :clientId))")
+List<AttendanceRecord> findByStatusAndDatesAndClient(
+        @Param("status") String status,
+        @Param("dates") List<String> dates,
+        @Param("clientId") Long clientId);
+
+@Query("SELECT COUNT(a) FROM AttendanceRecord a WHERE a.attendanceStatus = :status AND a.date IN :dates " +
+       "AND (:clientId IS NULL OR (a.employee IS NOT NULL AND a.employee.clientId = :clientId))")
+long countByStatusAndDatesAndClient(
+        @Param("status") String status,
+        @Param("dates") List<String> dates,
+        @Param("clientId") Long clientId);
 // Find by employeeId and month pattern in date (e.g., /06/2025)
 @Query("SELECT a FROM AttendanceRecord a WHERE a.employee.id = :employeeId AND a.date LIKE %:monthPattern")
 List<AttendanceRecord> findByEmployeeIdAndMonthPattern(@Param("employeeId") Long employeeId, @Param("monthPattern") String monthPattern);

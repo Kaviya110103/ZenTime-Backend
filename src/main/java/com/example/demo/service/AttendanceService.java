@@ -36,6 +36,10 @@ public class AttendanceService {
     
     
 public List<AttendanceRecord> getTodayAbsentRecords() {
+    return getTodayAbsentRecords(null);
+}
+
+public List<AttendanceRecord> getTodayAbsentRecords(Long clientId) {
     LocalDate today = LocalDate.now();
     List<String> dateCandidates = List.of(
             today.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
@@ -43,17 +47,25 @@ public List<AttendanceRecord> getTodayAbsentRecords() {
             today.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
     );
 
+    List<AttendanceRecord> records =
+            attendanceRepo.findByStatusAndDatesAndClient("Absent", dateCandidates, clientId);
     Map<Long, AttendanceRecord> unique = new LinkedHashMap<>();
-    for (String dateValue : dateCandidates) {
-        List<AttendanceRecord> records = attendanceRepo.findByDateAndAttendanceStatus(dateValue, "Absent");
-        for (AttendanceRecord record : records) {
-            if (record != null && record.getId() != null) {
-                unique.putIfAbsent(record.getId(), record);
-            }
+    for (AttendanceRecord record : records) {
+        if (record != null && record.getId() != null) {
+            unique.putIfAbsent(record.getId(), record);
         }
     }
-
     return new ArrayList<>(unique.values());
+}
+
+public long countTodayAbsentRecords(Long clientId) {
+    LocalDate today = LocalDate.now();
+    List<String> dateCandidates = List.of(
+            today.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+            today.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+            today.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+    );
+    return attendanceRepo.countByStatusAndDatesAndClient("Absent", dateCandidates, clientId);
 }
 
 
