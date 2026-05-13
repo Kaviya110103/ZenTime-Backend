@@ -306,6 +306,7 @@ public class EmployeeController {
             Employee employee = employeeOptional.get();
             employeeAdditionalWorkingDayRepository.deleteByEmployee_Id(employee.getId());
 
+            int savedCount = 0;
             if (additionalWorkingDays != null) {
                 for (AdditionalWorkingDayRequest day : additionalWorkingDays) {
                     if (day == null || day.dayType == null || day.dayType.trim().isEmpty()) {
@@ -321,7 +322,14 @@ public class EmployeeController {
                     row.setTimeIn(day.timeIn == null ? null : day.timeIn.trim());
                     row.setTimeOut(day.timeOut == null ? null : day.timeOut.trim());
                     employeeAdditionalWorkingDayRepository.save(row);
+                    savedCount++;
                 }
+            }
+
+            if (additionalWorkingDays != null
+                    && !additionalWorkingDays.isEmpty()
+                    && savedCount == 0) {
+                return ResponseEntity.badRequest().body("No valid additional working days were provided");
             }
 
             Employee saved = employeeRepository.findById(employee.getId()).orElse(employee);
@@ -1119,6 +1127,22 @@ public class EmployeeController {
             return;
         }
 
+        // Snapshot additional days before switching tenant context. This avoids
+        // accidental data loss when source and master resolve to the same managed entity.
+        List<EmployeeAdditionalWorkingDay> additionalDaysSnapshot = new ArrayList<>();
+        if (sourceEmployee.getAdditionalWorkingDays() != null) {
+            for (EmployeeAdditionalWorkingDay sourceDay : sourceEmployee.getAdditionalWorkingDays()) {
+                if (sourceDay == null) {
+                    continue;
+                }
+                EmployeeAdditionalWorkingDay copiedDay = new EmployeeAdditionalWorkingDay();
+                copiedDay.setDayType(sourceDay.getDayType());
+                copiedDay.setTimeIn(sourceDay.getTimeIn());
+                copiedDay.setTimeOut(sourceDay.getTimeOut());
+                additionalDaysSnapshot.add(copiedDay);
+            }
+        }
+
         String currentTenantDb = TenantContext.getTenantDb();
         try {
             TenantContext.clear();
@@ -1167,15 +1191,9 @@ public class EmployeeController {
             } else {
                 masterEmployee.getAdditionalWorkingDays().clear();
             }
-            if (sourceEmployee.getAdditionalWorkingDays() != null) {
-                for (EmployeeAdditionalWorkingDay sourceDay : sourceEmployee.getAdditionalWorkingDays()) {
-                    EmployeeAdditionalWorkingDay copiedDay = new EmployeeAdditionalWorkingDay();
-                    copiedDay.setDayType(sourceDay.getDayType());
-                    copiedDay.setTimeIn(sourceDay.getTimeIn());
-                    copiedDay.setTimeOut(sourceDay.getTimeOut());
-                    copiedDay.setEmployee(masterEmployee);
-                    masterEmployee.getAdditionalWorkingDays().add(copiedDay);
-                }
+            for (EmployeeAdditionalWorkingDay copiedDay : additionalDaysSnapshot) {
+                copiedDay.setEmployee(masterEmployee);
+                masterEmployee.getAdditionalWorkingDays().add(copiedDay);
             }
 
             employeeRepository.save(masterEmployee);
@@ -1332,12 +1350,33 @@ public class EmployeeController {
         if (employeeId == null) {
             return List.of();
         }
-        List<EmployeeAdditionalWorkingDayRepository.AdditionalWorkingDayRaw> rows =
-                employeeAdditionalWorkingDayRepository.findRawByEmployeeId(employeeId);
-        return rows.stream()
+        List<EmployeeAdditionalWorkingDayRepository.AdditionalWorkingDayRaw> rows = List.of();
+        try {
+            rows = employeeAdditionalWorkingDayRepository.findRawByEmployeeId(employeeId);
+        } catch (Exception ex) {
+            logger.warn("Native additional working days query failed for employeeId={}, falling back to entity mapping", employeeId, ex);
+        }
+
+        if (rows != null && !rows.isEmpty()) {
+            return rows.stream()
+                    .map(day -> {
+                        Map<String, Object> item = new java.util.LinkedHashMap<>();
+                        String rawType = day.getDayType() == null ? "" : day.getDayType().trim().toUpperCase();
+                        item.put("dayType", rawType);
+                        item.put("label", formatAdditionalWorkingDayLabel(rawType));
+                        item.put("timeIn", day.getTimeIn());
+                        item.put("timeOut", day.getTimeOut());
+                        return item;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        List<EmployeeAdditionalWorkingDay> entityRows =
+                employeeAdditionalWorkingDayRepository.findByEmployee_Id(employeeId);
+        return entityRows.stream()
                 .map(day -> {
                     Map<String, Object> item = new java.util.LinkedHashMap<>();
-                    String rawType = day.getDayType() == null ? "" : day.getDayType().trim().toUpperCase();
+                    String rawType = day.getDayType() == null ? "" : day.getDayType().name();
                     item.put("dayType", rawType);
                     item.put("label", formatAdditionalWorkingDayLabel(rawType));
                     item.put("timeIn", day.getTimeIn());
