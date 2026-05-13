@@ -695,6 +695,15 @@ public class EmployeeController {
                     : ex.getMessage();
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(message == null ? "Unable to delete employee due to dependent records" : message);
+        } catch (Exception ex) {
+            logger.error("Unexpected failure while deleting employeeId={}", id, ex);
+            Throwable root = ex;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            String message = root.getMessage() != null ? root.getMessage() : ex.getMessage();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(message == null ? "Unable to delete employee due to an internal error" : message);
         }
     }
 
@@ -713,6 +722,15 @@ public class EmployeeController {
                         : ex.getMessage();
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(message == null ? "Unable to delete employee due to dependent records" : message);
+            } catch (Exception ex) {
+                logger.error("Unexpected failure while deleting employee username={}", username, ex);
+                Throwable root = ex;
+                while (root.getCause() != null && root.getCause() != root) {
+                    root = root.getCause();
+                }
+                String message = root.getMessage() != null ? root.getMessage() : ex.getMessage();
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(message == null ? "Unable to delete employee due to an internal error" : message);
             }
         }
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Employee not found");  // Return 404 if employee not found

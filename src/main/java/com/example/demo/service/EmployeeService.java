@@ -13,8 +13,11 @@ import java.math.RoundingMode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -174,20 +177,59 @@ public class EmployeeService {
     public void deleteEmployeeById(Long id) {
         schemaMaintenanceService.ensureEmployeeSchema();
 
-        purgeSecondLevelReferencesByEmployee("attendance_record", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("leave_permission", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("location_requests", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("overtime_request", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("employee_push_tokens", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("employee_net_payment", "id", "employee_id", id);
-        purgeSecondLevelReferencesByEmployee("employee_additional_working_day", "id", "employee_id", id);
+        // Remove children that can reference attendance records for this employee.
+        safeDeleteByAttendanceJoinIfPresent("location_requests", "attendance_record_id", id);
+        safeDeleteByAttendanceJoinIfPresent("leave_permission", "attendance_record_id", id);
 
-        purgeDirectEmployeeReferences(id);
+        // Remove direct employee-linked rows.
+        safeDeleteByEmployeeIdIfPresent("location_requests", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("leave_permission", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("overtime_request", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("employee_push_tokens", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("employee_net_payment", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("employee_additional_working_day", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("attendance_record", "employee_id", id);
 
         // Compatibility cleanup for legacy schemas that store employeeId without FK.
-        employeeSalaryDetailsRepository.deleteByEmployeeId(id);
+        safeDeleteByEmployeeIdIfPresent("employee_salary_details", "employee_id", id);
 
-        employeeRepository.deleteById(id);
+        int deleted = jdbcTemplate.update(
+                "DELETE FROM " + quoteIdentifier("employee") + " WHERE " + quoteIdentifier("id") + " = ?",
+                id);
+        if (deleted == 0) {
+            throw new EmptyResultDataAccessException("Employee not found with id " + id, 1);
+        }
+    }
+
+    private void safeDeleteByEmployeeIdIfPresent(String tableName, String employeeIdColumn, Long employeeId) {
+        String sql = "DELETE FROM " + quoteIdentifier(tableName)
+                + " WHERE " + quoteIdentifier(employeeIdColumn) + " = ?";
+        try {
+            jdbcTemplate.update(sql, employeeId);
+        } catch (BadSqlGrammarException ex) {
+            logger.debug("Skipping cleanup for missing/incompatible table {} while deleting employeeId={}",
+                    tableName, employeeId);
+        } catch (DataAccessException ex) {
+            logger.warn("Failed cleanup in table {} for employeeId={}", tableName, employeeId, ex);
+            throw ex;
+        }
+    }
+
+    private void safeDeleteByAttendanceJoinIfPresent(String childTable, String attendanceFkColumn, Long employeeId) {
+        String sql = "DELETE FROM " + quoteIdentifier(childTable)
+                + " WHERE " + quoteIdentifier(attendanceFkColumn) + " IN ("
+                + "SELECT " + quoteIdentifier("id")
+                + " FROM " + quoteIdentifier("attendance_record")
+                + " WHERE " + quoteIdentifier("employee_id") + " = ?)";
+        try {
+            jdbcTemplate.update(sql, employeeId);
+        } catch (BadSqlGrammarException ex) {
+            logger.debug("Skipping attendance-linked cleanup for missing/incompatible table {} while deleting employeeId={}",
+                    childTable, employeeId);
+        } catch (DataAccessException ex) {
+            logger.warn("Failed attendance-linked cleanup in table {} for employeeId={}", childTable, employeeId, ex);
+            throw ex;
+        }
     }
 
     private void purgeDirectEmployeeReferences(Long employeeId) {
@@ -303,6 +345,14 @@ public class EmployeeService {
             throw new IllegalArgumentException("Unsafe SQL identifier: " + identifier);
         }
         return "`" + identifier.replace("`", "``") + "`";
+    }
+
+    private boolean tableExists(String tableName) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+                Integer.class,
+                tableName);
+        return count != null && count > 0;
     }
 
     private static final class FkReference {
