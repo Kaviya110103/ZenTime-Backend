@@ -4,6 +4,7 @@ import com.example.demo.MODELS.*;
 import com.example.demo.repo.AttendanceRecordRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.HolidayRepository;
+import com.example.demo.repo.LeavePolicyRepository;
 import com.example.demo.repo.LeavePermissionRepository;
 import com.example.demo.repo.OvertimeRequestRepository;
 import org.springframework.stereotype.Service;
@@ -23,14 +24,13 @@ public class PayrollCalculationService {
     private static final DateTimeFormatter DB_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM = DateTimeFormatter.ofPattern("H:mm");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM_SS = DateTimeFormatter.ofPattern("H:mm:ss");
-    private static final LocalTime DEFAULT_SHIFT_START = LocalTime.of(10, 0);
-    private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(19, 0);
     private static final String SWAP_WEEKOFF_TYPE = "swap weekoff";
 
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final LeavePermissionRepository leavePermissionRepository;
     private final HolidayRepository holidayRepository;
+    private final LeavePolicyRepository leavePolicyRepository;
     private final SchemaMaintenanceService schemaMaintenanceService;
     private final OvertimeRequestRepository overtimeRequestRepository;
 
@@ -39,12 +39,14 @@ public class PayrollCalculationService {
             AttendanceRecordRepository attendanceRecordRepository,
             LeavePermissionRepository leavePermissionRepository,
             HolidayRepository holidayRepository,
+            LeavePolicyRepository leavePolicyRepository,
             SchemaMaintenanceService schemaMaintenanceService,
             OvertimeRequestRepository overtimeRequestRepository) {
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.leavePermissionRepository = leavePermissionRepository;
         this.holidayRepository = holidayRepository;
+        this.leavePolicyRepository = leavePolicyRepository;
         this.schemaMaintenanceService = schemaMaintenanceService;
         this.overtimeRequestRepository = overtimeRequestRepository;
     }
@@ -69,7 +71,8 @@ public class PayrollCalculationService {
         Set<LocalDate> approvedSwapWeekoffDates =
                 resolveApprovedSwapWeekoffDates(employeeId, month, year);
 
-        LeavePolicy policy = resolveLeavePolicy(employee);
+        SchedulePolicy policy = resolveSchedulePolicy(employee);
+        LeaveAllowancePolicy leaveAllowancePolicy = resolveLeaveAllowancePolicy(employee);
         Map<LocalDate, ShiftWindow> shiftWindowsByDate =
                 buildShiftWindows(employee, policy, firstDate, lastDate, approvedSwapWeekoffDates);
         Map<LocalDate, Integer> scheduledMinutesByDate = new HashMap<>();
@@ -86,11 +89,11 @@ public class PayrollCalculationService {
                 year,
                 holidayFractionByDate,
                 scheduledMinutesByDate);
-        int casualBalance = employee.getCasualLeaveBalance() == null ? 0 : employee.getCasualLeaveBalance();
+        int casualBalance = leaveAllowancePolicy.casualLeaveAllowed();
         leaveBuckets.applyCasualBalance(scheduledMinutesByDate, casualBalance);
 
         WorkSummary workSummary =
-                buildWorkedMinutesByDate(employeeId, month, year);
+                buildWorkedMinutesByDate(employee, month, year);
         Map<LocalDate, Integer> workedMinutesByDate = workSummary.workedMinutesByDate;
 
         int overtimeMinutes = 0;
@@ -98,16 +101,19 @@ public class PayrollCalculationService {
             LocalDate date = entry.getKey();
             WorkEntry workEntry = workSummary.workEntries.get(date);
             ShiftWindow window = shiftWindowsByDate.get(date);
+            if (workEntry != null
+                    && workEntry.recordedOvertimeMinutes > 0
+                    && workSummary.overtimeApprovedDates.contains(date)) {
+                overtimeMinutes += workEntry.recordedOvertimeMinutes;
+                continue;
+            }
             if (window == null || window.minutes <= 0) {
                 continue; // Week-off work counts as regular payable, not overtime.
             }
             if (!workSummary.overtimeApprovedDates.contains(date)) {
                 continue;
             }
-            if (workEntry == null || workEntry.earliestTimeIn == null || workEntry.latestTimeOut == null) {
-                continue;
-            }
-            if (workEntry.earliestTimeInTime == null || workEntry.latestTimeOutTime == null) {
+            if (workEntry == null || workEntry.earliestTimeInTime == null || workEntry.latestTimeOutTime == null) {
                 continue;
             }
             LocalTime actualOutTime = workEntry.latestTimeOutTime;
@@ -200,11 +206,16 @@ public class PayrollCalculationService {
             }
         }
 
-        int approvedPermissionMinutes = calculateApprovedPermissionMinutes(employeeId, month, year);
-        int adjustedWorkedMinutes = Math.max(0, expectedMinutes - approvedPermissionMinutes);
+        int approvedPermissionMinutes = Math.max(
+                calculateApprovedPermissionMinutes(employeeId, month, year),
+                workSummary.totalPermissionUsedMinutes());
+        int allowedPermissionMinutes = resolveAllowedPermissionMinutes(employee);
+        int payablePermissionMinutes = Math.min(approvedPermissionMinutes, allowedPermissionMinutes);
+        int actualWorkedMinutes = Math.max(0, workSummary.totalWorkedMinutes());
+        int adjustedWorkedMinutes = Math.min(expectedMinutes, actualWorkedMinutes + payablePermissionMinutes);
 
         double expectedHours = minutesToHours(expectedMinutes);
-        double payableHours = minutesToHours(payableMinutes);
+        double payableHours = minutesToHours(Math.min(expectedMinutes, payableMinutes + payablePermissionMinutes));
         double workedHours = minutesToHours(adjustedWorkedMinutes);
         double overtimeHours = minutesToHours(overtimeMinutes);
         double salary = employee.getSalary() == null ? 0.0 : employee.getSalary();
@@ -258,7 +269,8 @@ public class PayrollCalculationService {
         Set<LocalDate> approvedSwapWeekoffDates =
                 resolveApprovedSwapWeekoffDates(employeeId, month, year);
 
-        LeavePolicy policy = resolveLeavePolicy(employee);
+        SchedulePolicy policy = resolveSchedulePolicy(employee);
+        LeaveAllowancePolicy leaveAllowancePolicy = resolveLeaveAllowancePolicy(employee);
         Map<LocalDate, ShiftWindow> shiftWindowsByDate =
                 buildShiftWindows(employee, policy, firstDate, lastDate, approvedSwapWeekoffDates);
         Map<LocalDate, Integer> scheduledMinutesByDate = new HashMap<>();
@@ -274,10 +286,10 @@ public class PayrollCalculationService {
                 year,
                 holidayFractionByDate,
                 scheduledMinutesByDate);
-        int casualBalance = employee.getCasualLeaveBalance() == null ? 0 : employee.getCasualLeaveBalance();
+        int casualBalance = leaveAllowancePolicy.casualLeaveAllowed();
         leaveBuckets.applyCasualBalance(scheduledMinutesByDate, casualBalance);
 
-        WorkSummary workSummary = buildWorkedMinutesByDate(employeeId, month, year);
+        WorkSummary workSummary = buildWorkedMinutesByDate(employee, month, year);
 
         List<PayrollDebugEntry> rows = new ArrayList<>();
         for (Map.Entry<LocalDate, ShiftWindow> entry : shiftWindowsByDate.entrySet()) {
@@ -303,7 +315,11 @@ public class PayrollCalculationService {
                 payableMinutes = Math.max(0, scheduledMinutes);
             }
 
-            if (workSummary.overtimeApprovedDates.contains(date)
+            if (workEntry != null
+                    && workEntry.recordedOvertimeMinutes > 0
+                    && workSummary.overtimeApprovedDates.contains(date)) {
+                overtimeMinutes = workEntry.recordedOvertimeMinutes;
+            } else if (workSummary.overtimeApprovedDates.contains(date)
                     && window != null
                     && window.end != null
                     && workEntry != null
@@ -339,11 +355,11 @@ public class PayrollCalculationService {
 
     private Map<LocalDate, Integer> buildSchedule(
             Employee employee,
-            LeavePolicy policy,
+            SchedulePolicy policy,
             LocalDate start,
             LocalDate end) {
         Map<AdditionalWorkingDayType, EmployeeAdditionalWorkingDay> additionalMap = new EnumMap<>(AdditionalWorkingDayType.class);
-        if (employee.getAdditionalWorkingDays() != null) {
+        if (employee != null && employee.getAdditionalWorkingDays() != null) {
             for (EmployeeAdditionalWorkingDay day : employee.getAdditionalWorkingDays()) {
                 if (day != null && day.getDayType() != null) {
                     additionalMap.putIfAbsent(day.getDayType(), day);
@@ -371,7 +387,9 @@ public class PayrollCalculationService {
             } else if (isWeekOff) {
                 scheduledMinutes = 0;
             } else {
-                scheduledMinutes = resolveShiftMinutes(employee.getShiftStartTime(), employee.getShiftEndTime());
+                LocalTime shiftStart = PayrollCompatibilityDefaults.resolveShiftStart(employee);
+                LocalTime shiftEnd = PayrollCompatibilityDefaults.resolveShiftEnd(employee);
+                scheduledMinutes = Math.max((int) Duration.between(shiftStart, shiftEnd).toMinutes(), 0);
             }
 
             schedule.put(date, scheduledMinutes);
@@ -483,9 +501,13 @@ public class PayrollCalculationService {
     }
 
     private WorkSummary buildWorkedMinutesByDate(
-            Long employeeId,
+            Employee employee,
             int month,
             int year) {
+        Long employeeId = employee == null ? null : employee.getId();
+        if (employeeId == null) {
+            return new WorkSummary(new HashMap<>(), new HashSet<>(), new HashMap<>(), 0, 0);
+        }
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
         Map<LocalDate, Integer> workedMinutesByDate = new HashMap<>();
         Set<LocalDate> overtimeApprovedDates = new HashSet<>();
@@ -496,34 +518,30 @@ public class PayrollCalculationService {
             if (date == null || date.getMonthValue() != month || date.getYear() != year) {
                 continue;
             }
-            if (record.getTimeIn() == null || record.getTimeOut() == null) {
-                continue;
-            }
-            if (!record.getTimeOut().isAfter(record.getTimeIn())) {
-                continue;
-            }
             LocalDateTime normalizedIn = normalizeToMinute(record.getTimeIn());
             LocalDateTime normalizedOut = normalizeToMinute(record.getTimeOut());
-            if (normalizedIn == null || normalizedOut == null) {
-                continue;
-            }
-            int minutes = (int) Duration.between(normalizedIn, normalizedOut).toMinutes();
+            int minutes = resolveWorkedMinutes(record, normalizedIn, normalizedOut);
 
             if (minutes <= 0) {
                 continue;
             }
             workedMinutesByDate.merge(date, minutes, Integer::sum);
             WorkEntry entry = workEntries.getOrDefault(date, new WorkEntry());
-            if (entry.earliestTimeIn == null || normalizedIn.isBefore(entry.earliestTimeIn)) {
+            if (normalizedIn != null && (entry.earliestTimeIn == null || normalizedIn.isBefore(entry.earliestTimeIn))) {
                 entry.earliestTimeIn = normalizedIn;
                 entry.earliestTimeInTime = normalizedIn.toLocalTime();
             }
-            if (entry.latestTimeOut == null || normalizedOut.isAfter(entry.latestTimeOut)) {
+            if (normalizedOut != null && (entry.latestTimeOut == null || normalizedOut.isAfter(entry.latestTimeOut))) {
                 entry.latestTimeOut = normalizedOut;
                 entry.latestTimeOutTime = normalizedOut.toLocalTime();
             }
             entry.totalWorkedMinutes += minutes;
+            entry.recordedOvertimeMinutes += resolveRecordedOvertimeMinutes(record);
+            entry.permissionUsedMinutes += resolvePermissionUsedMinutes(record);
             workEntries.put(date, entry);
+            if (Boolean.TRUE.equals(record.getOvertimeApproved()) && entry.recordedOvertimeMinutes > 0) {
+                overtimeApprovedDates.add(date);
+            }
         }
 
         List<OvertimeRequest> approvedRequests =
@@ -539,7 +557,43 @@ public class PayrollCalculationService {
             overtimeApprovedDates.add(requestDate);
         }
 
-        return new WorkSummary(workedMinutesByDate, overtimeApprovedDates, workEntries);
+        int totalWorkedMinutes = 0;
+        int totalPermissionUsedMinutes = 0;
+        for (Integer minutes : workedMinutesByDate.values()) {
+            totalWorkedMinutes += minutes == null ? 0 : minutes;
+        }
+        for (WorkEntry entry : workEntries.values()) {
+            totalPermissionUsedMinutes += entry == null ? 0 : entry.permissionUsedMinutes;
+        }
+        return new WorkSummary(workedMinutesByDate, overtimeApprovedDates, workEntries, totalWorkedMinutes, totalPermissionUsedMinutes);
+    }
+
+    private int resolveWorkedMinutes(AttendanceRecord record, LocalDateTime normalizedIn, LocalDateTime normalizedOut) {
+        if (record == null) {
+            return 0;
+        }
+        // New attendance rows may carry worked_hours directly. Legacy rows fall back to timeIn/timeOut.
+        if (record.getWorkedHours() != null && record.getWorkedHours() > 0) {
+            return (int) Math.round(record.getWorkedHours() * 60.0);
+        }
+        if (normalizedIn == null || normalizedOut == null || !normalizedOut.isAfter(normalizedIn)) {
+            return 0;
+        }
+        return (int) Duration.between(normalizedIn, normalizedOut).toMinutes();
+    }
+
+    private int resolveRecordedOvertimeMinutes(AttendanceRecord record) {
+        if (record == null || record.getOvertime() == null || record.getOvertime() <= 0) {
+            return 0;
+        }
+        return (int) Math.round(record.getOvertime() * 60.0);
+    }
+
+    private int resolvePermissionUsedMinutes(AttendanceRecord record) {
+        if (record == null || record.getPermissionUsed() == null || record.getPermissionUsed() <= 0) {
+            return 0;
+        }
+        return (int) Math.round(record.getPermissionUsed() * 60.0);
     }
 
     private int calculateApprovedPermissionMinutes(Long employeeId, int month, int year) {
@@ -577,9 +631,13 @@ public class PayrollCalculationService {
         return Math.max(0, totalMinutes);
     }
 
-    private LeavePolicy resolveLeavePolicy(Employee employee) {
-        String policyRaw = employee.getLeavePolicyType();
-        String weekOffRaw = employee.getWeekOff();
+    private int resolveAllowedPermissionMinutes(Employee employee) {
+        return (int) Math.round(PayrollCompatibilityDefaults.resolvePermissionHoursAllowed(employee) * 60.0);
+    }
+
+    private SchedulePolicy resolveSchedulePolicy(Employee employee) {
+        String policyRaw = employee == null ? null : employee.getLeavePolicyType();
+        String weekOffRaw = employee == null ? null : employee.getWeekOff();
 
         LeavePolicyType policyType = LeavePolicyType.WEEKOFF;
         if (policyRaw != null && !policyRaw.isBlank()) {
@@ -602,7 +660,26 @@ public class PayrollCalculationService {
         if (weekOffDay == null) {
             weekOffDay = DayOfWeek.SUNDAY;
         }
-        return new LeavePolicy(policyType, weekOffDay);
+        return new SchedulePolicy(policyType, weekOffDay);
+    }
+
+    private LeaveAllowancePolicy resolveLeaveAllowancePolicy(Employee employee) {
+        int fallbackCasual = employee != null && employee.getCasualLeaveBalance() != null
+                ? Math.max(0, employee.getCasualLeaveBalance())
+                : PayrollCompatibilityDefaults.DEFAULT_CASUAL_LEAVE_ALLOWED;
+        int fallbackSick = PayrollCompatibilityDefaults.DEFAULT_SICK_LEAVE_ALLOWED;
+        int fallbackEarned = PayrollCompatibilityDefaults.DEFAULT_EARNED_LEAVE_ALLOWED;
+
+        if (employee == null || employee.getId() == null) {
+            return new LeaveAllowancePolicy(fallbackCasual, fallbackSick, fallbackEarned);
+        }
+
+        return leavePolicyRepository.findByEmployee_Id(employee.getId())
+                .map(policy -> new LeaveAllowancePolicy(
+                        policy.getCasualLeaveAllowed() == null ? fallbackCasual : Math.max(0, policy.getCasualLeaveAllowed()),
+                        policy.getSickLeaveAllowed() == null ? fallbackSick : Math.max(0, policy.getSickLeaveAllowed()),
+                        policy.getEarnedLeaveAllowed() == null ? fallbackEarned : Math.max(0, policy.getEarnedLeaveAllowed())))
+                .orElseGet(() -> new LeaveAllowancePolicy(fallbackCasual, fallbackSick, fallbackEarned));
     }
 
     private DayOfWeek parseDayOfWeek(String raw) {
@@ -685,8 +762,8 @@ public class PayrollCalculationService {
     }
 
     private int resolveShiftMinutes(String startRaw, String endRaw) {
-        LocalTime start = parseFlexibleTime(startRaw).orElse(DEFAULT_SHIFT_START);
-        LocalTime end = parseFlexibleTime(endRaw).orElse(DEFAULT_SHIFT_END);
+        LocalTime start = parseFlexibleTime(startRaw).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_START);
+        LocalTime end = parseFlexibleTime(endRaw).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_END);
         int minutes = (int) Duration.between(start, end).toMinutes();
         return Math.max(minutes, 0);
     }
@@ -724,13 +801,16 @@ public class PayrollCalculationService {
         IGNORE
     }
 
-    private record LeavePolicy(LeavePolicyType type, DayOfWeek weekOffDay) {
+    private record SchedulePolicy(LeavePolicyType type, DayOfWeek weekOffDay) {
         boolean isWeekOff(DayOfWeek day) {
             if (type == LeavePolicyType.WEEKEND_OFF) {
                 return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
             }
             return day == weekOffDay;
         }
+    }
+
+    private record LeaveAllowancePolicy(int casualLeaveAllowed, int sickLeaveAllowed, int earnedLeaveAllowed) {
     }
 
     private static class LeaveBuckets {
@@ -764,13 +844,27 @@ public class PayrollCalculationService {
         private final Map<LocalDate, Integer> workedMinutesByDate;
         private final Set<LocalDate> overtimeApprovedDates;
         private final Map<LocalDate, WorkEntry> workEntries;
+        private final int totalWorkedMinutes;
+        private final int totalPermissionUsedMinutes;
 
         private WorkSummary(Map<LocalDate, Integer> workedMinutesByDate,
                             Set<LocalDate> overtimeApprovedDates,
-                            Map<LocalDate, WorkEntry> workEntries) {
+                            Map<LocalDate, WorkEntry> workEntries,
+                            int totalWorkedMinutes,
+                            int totalPermissionUsedMinutes) {
             this.workedMinutesByDate = workedMinutesByDate;
             this.overtimeApprovedDates = overtimeApprovedDates;
             this.workEntries = workEntries;
+            this.totalWorkedMinutes = totalWorkedMinutes;
+            this.totalPermissionUsedMinutes = totalPermissionUsedMinutes;
+        }
+
+        private int totalWorkedMinutes() {
+            return totalWorkedMinutes;
+        }
+
+        private int totalPermissionUsedMinutes() {
+            return totalPermissionUsedMinutes;
         }
     }
 
@@ -780,11 +874,13 @@ public class PayrollCalculationService {
         private LocalTime earliestTimeInTime;
         private LocalTime latestTimeOutTime;
         private int totalWorkedMinutes = 0;
+        private int recordedOvertimeMinutes = 0;
+        private int permissionUsedMinutes = 0;
     }
 
     private Map<LocalDate, ShiftWindow> buildShiftWindows(
             Employee employee,
-            LeavePolicy policy,
+            SchedulePolicy policy,
             LocalDate start,
             LocalDate end,
             Set<LocalDate> approvedSwapWeekoffDates) {
@@ -819,8 +915,8 @@ public class PayrollCalculationService {
             }
 
             if (override != null) {
-                LocalTime startTime = parseFlexibleTime(override.getTimeIn()).orElse(DEFAULT_SHIFT_START);
-                LocalTime endTime = parseFlexibleTime(override.getTimeOut()).orElse(DEFAULT_SHIFT_END);
+                LocalTime startTime = parseFlexibleTime(override.getTimeIn()).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_START);
+                LocalTime endTime = parseFlexibleTime(override.getTimeOut()).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_END);
                 int minutes = Math.max((int) Duration.between(startTime, endTime).toMinutes(), 0);
                 schedule.put(date, new ShiftWindow(startTime, endTime, minutes));
                 continue;
@@ -831,8 +927,8 @@ public class PayrollCalculationService {
                 continue;
             }
 
-            LocalTime startTime = parseFlexibleTime(employee.getShiftStartTime()).orElse(DEFAULT_SHIFT_START);
-            LocalTime endTime = parseFlexibleTime(employee.getShiftEndTime()).orElse(DEFAULT_SHIFT_END);
+            LocalTime startTime = PayrollCompatibilityDefaults.resolveShiftStart(employee);
+            LocalTime endTime = PayrollCompatibilityDefaults.resolveShiftEnd(employee);
             int minutes = Math.max((int) Duration.between(startTime, endTime).toMinutes(), 0);
             schedule.put(date, new ShiftWindow(startTime, endTime, minutes));
         }

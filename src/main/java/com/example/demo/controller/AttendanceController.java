@@ -17,6 +17,7 @@ import com.example.demo.service.AttendanceMetricsService;
 import com.example.demo.service.AttendanceSchedulerService;
 import com.example.demo.service.AttendanceService;
 import com.example.demo.service.EmployeeService;
+import com.example.demo.service.PayrollCompatibilityDefaults;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -77,13 +78,13 @@ private LocationRepository locationRepository;
         private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM = DateTimeFormatter.ofPattern("H:mm");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM_SS = DateTimeFormatter.ofPattern("H:mm:ss");
-    private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(19, 0);
 @PutMapping("/start-day")
 public ResponseEntity<?> startDay(@RequestParam Long employeeId,
                                   @RequestParam String location,
                                   @RequestParam(value = "clientId", required = false) Long clientId,
                                   @RequestParam(value = "latitude", required = false) Double latitude,
                                   @RequestParam(value = "longitude", required = false) Double longitude) {
+    schemaMaintenanceService.ensureEmployeeSchema();
     String todayDate = LocalDate.now().format(dateFormatter);
     String yesterdayDate = LocalDate.now().minusDays(1).format(dateFormatter);
 
@@ -180,12 +181,13 @@ public ResponseEntity<?> submitTimeoutReason(@RequestParam Long recordId, @Reque
 @GetMapping("/missed-timeout")
 public List<Map<String, Object>> getMissedTimeoutEmployees(
         @RequestParam(value = "clientId", required = false) Long clientId) {
-    List<AttendanceRecord> records = clientId == null
-            ? attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present")
-            : attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId("Present", clientId);
+    List<AttendanceRecord> records = attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present");
     List<Map<String, Object>> result = new ArrayList<>();
     for (AttendanceRecord record : records) {
         if (record.getEmployee() == null) {
+            continue;
+        }
+        if (clientId != null && !clientId.equals(record.getEmployee().getClientId())) {
             continue;
         }
         Map<String, Object> map = new HashMap<>();
@@ -204,9 +206,10 @@ public List<Map<String, Object>> getMissedTimeoutEmployees(
 @GetMapping("/missed-timeout/count")
 public ResponseEntity<Long> getMissedTimeoutCount(
         @RequestParam(value = "clientId", required = false) Long clientId) {
-    long count = clientId == null
-            ? attendanceRecordRepository.countByAttendanceStatusAndTimeOutIsNull("Present")
-            : attendanceRecordRepository.countByAttendanceStatusAndTimeOutIsNullAndEmployee_ClientId("Present", clientId);
+    long count = attendanceRecordRepository.findByAttendanceStatusAndTimeOutIsNull("Present").stream()
+            .filter(record -> record.getEmployee() != null)
+            .filter(record -> clientId == null || clientId.equals(record.getEmployee().getClientId()))
+            .count();
     return ResponseEntity.ok(count);
 }
 
@@ -324,6 +327,7 @@ public ResponseEntity<?> completeMissedTimeout(
     AttendanceRecord record = optional.get();
     record.setDayStatus("Completed");
     record.setTimeOut(LocalDateTime.parse(timeOut));
+    updateDerivedAttendanceHours(record);
     if (overtimeApproved != null) {
         record.setOvertimeApproved(overtimeApproved);
     }
@@ -337,6 +341,7 @@ public ResponseEntity<?> completeMissedTimeout(
 public ResponseEntity<String> markTimeIn(
         @RequestParam Long recordId,
         @RequestParam MultipartFile imageIn) {
+    schemaMaintenanceService.ensureEmployeeSchema();
     Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
     if (optionalRecord.isPresent()) {
         try {
@@ -355,12 +360,14 @@ public ResponseEntity<String> markTimeIn(
 
     @GetMapping("/all")
     public List<AttendanceRecord> getAllAttendanceRecords() {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return attendanceRecordRepository.findAll();
     }
 
 
  @GetMapping("/monthly/{employeeId}")
     public List<AttendanceRecord> getMonthlyAttendance(@PathVariable Long employeeId) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return attendanceRecordRepository.findByEmployeeId(employeeId);
     }
 
@@ -369,6 +376,7 @@ public ResponseEntity<String> markTimeIn(
     public ResponseEntity<?> getByDate(
             @PathVariable Long employeeId,
             @PathVariable String isoDate) {
+        schemaMaintenanceService.ensureEmployeeSchema();
 
         String dbDate = DateUtil.isoToDb(isoDate);          // 14/07/2025
         return attendanceRecordRepository.findByEmployee_IdAndDate(employeeId, dbDate)
@@ -384,6 +392,7 @@ public ResponseEntity<String> markTimeIn(
             @PathVariable Long employeeId,
             @PathVariable int year,
             @PathVariable int month) {
+        schemaMaintenanceService.ensureEmployeeSchema();
 
         String start = DateUtil.dbStartOfMonth(year, month); // 01/07/2025
         String end   = DateUtil.dbEndOfMonth(year, month);   // 31/07/2025
@@ -407,6 +416,7 @@ public ResponseEntity<String> markTimeIn(
             try {
                 LocalDateTime now = LocalDateTime.now();
                 record.setTimeOut(now);
+                updateDerivedAttendanceHours(record);
                 if (overtimeApproved != null) {
                     record.setOvertimeApproved(overtimeApproved);
                 }
@@ -421,7 +431,7 @@ public ResponseEntity<String> markTimeIn(
                 if (Boolean.TRUE.equals(overtimeRequested)) {
                     Employee employee = record.getEmployee();
                     if (employee != null) {
-                        LocalTime shiftEnd = parseShiftEnd(employee.getShiftEndTime());
+                        LocalTime shiftEnd = parseShiftEnd(employee);
                         LocalTime logoutTime = now.toLocalTime();
                         long overtimeMinutes = 0;
                         if (logoutTime.isAfter(shiftEnd)) {
@@ -892,9 +902,12 @@ public ResponseEntity<?> getTodayOrYesterdayAttendance(@PathVariable Long employ
 @GetMapping("/today-timein")
 public ResponseEntity<List<Map<String, Object>>> getTodayTimeInDetails(
         @RequestParam(value = "clientId", required = false) Long clientId) {
-    String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    List<AttendanceRecord> records = attendanceRecordRepository
-            .findTodayPresentTimeInByDateAndClient(today, clientId);
+    List<AttendanceRecord> records = findRecordsByDateFlexible(LocalDate.now()).stream()
+            .filter(record -> record.getTimeIn() != null)
+            .filter(record -> "Present".equalsIgnoreCase(record.getAttendanceStatus()))
+            .filter(record -> clientId == null
+                    || (record.getEmployee() != null && clientId.equals(record.getEmployee().getClientId())))
+            .collect(Collectors.toList());
 
     List<Map<String, Object>> result = records.stream()
         .filter(record -> record.getEmployee() != null)
@@ -1209,7 +1222,7 @@ private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientI
 
 private LocalTime parseShiftEnd(String raw) {
     if (raw == null || raw.isBlank()) {
-        return DEFAULT_SHIFT_END;
+        return PayrollCompatibilityDefaults.DEFAULT_SHIFT_END;
     }
     try {
         return LocalTime.parse(raw.trim(), TIME_FORMATTER_HH_MM_SS);
@@ -1219,8 +1232,31 @@ private LocalTime parseShiftEnd(String raw) {
     try {
         return LocalTime.parse(raw.trim(), TIME_FORMATTER_HH_MM);
     } catch (DateTimeParseException ignored) {
-        return DEFAULT_SHIFT_END;
+        return PayrollCompatibilityDefaults.DEFAULT_SHIFT_END;
     }
+}
+
+private LocalTime parseShiftEnd(Employee employee) {
+    return PayrollCompatibilityDefaults.resolveShiftEnd(employee);
+}
+
+private void updateDerivedAttendanceHours(AttendanceRecord record) {
+    if (record == null || record.getTimeIn() == null || record.getTimeOut() == null) {
+        return;
+    }
+    if (!record.getTimeOut().isAfter(record.getTimeIn())) {
+        return;
+    }
+
+    long workedMinutes = Duration.between(record.getTimeIn(), record.getTimeOut()).toMinutes();
+    record.setWorkedHours(Math.round((workedMinutes / 60.0) * 100.0) / 100.0);
+
+    LocalTime shiftEnd = parseShiftEnd(record.getEmployee());
+    LocalTime actualOut = record.getTimeOut().toLocalTime();
+    long overtimeMinutes = actualOut.isAfter(shiftEnd)
+            ? Duration.between(shiftEnd, actualOut).toMinutes()
+            : 0;
+    record.setOvertime(Math.round((Math.max(0, overtimeMinutes) / 60.0) * 100.0) / 100.0);
 }
 
 

@@ -97,6 +97,7 @@ public class EmployeeController {
     
           @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createEmployee(@RequestBody Employee employee) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         if (employee.getClientId() == null) {
             return ResponseEntity.badRequest().build(); // must supply clientId
         }
@@ -241,6 +242,7 @@ public class EmployeeController {
             @RequestParam(value = "clientId", required = false) Long clientId,
             @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
         Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        schemaMaintenanceService.ensureEmployeeSchema();
         Optional<Employee> employeeOptional = resolveEmployeeByIdOrCode(id, effectiveClientId);
 
         return employeeOptional
@@ -369,6 +371,7 @@ public class EmployeeController {
             @RequestParam(value = "clientId", required = false) Long clientId,
             @RequestHeader(value = "X-Client-Id", required = false) Long headerClientId) {
         Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        schemaMaintenanceService.ensureEmployeeSchema();
         if (effectiveClientId != null) {
             return ResponseEntity.ok(employeeService.getEmployeesByClientId(effectiveClientId));
         }
@@ -401,6 +404,7 @@ public class EmployeeController {
             @RequestBody Employee updatedEmployeeData) {
 
         Long effectiveClientId = resolveClientId(clientId, headerClientId);
+        schemaMaintenanceService.ensureEmployeeSchema();
         if (effectiveClientId == null) {
             effectiveClientId = updatedEmployeeData.getClientId();
         }
@@ -475,9 +479,13 @@ public class EmployeeController {
             existingEmployee.setWeekOff(updatedEmployeeData.getWeekOff());
             existingEmployee.setShiftStartTime(updatedEmployeeData.getShiftStartTime());
             existingEmployee.setShiftEndTime(updatedEmployeeData.getShiftEndTime());
+            existingEmployee.setShiftStart(updatedEmployeeData.getShiftStart());
+            existingEmployee.setShiftEnd(updatedEmployeeData.getShiftEnd());
             existingEmployee.setLeavePolicyType(updatedEmployeeData.getLeavePolicyType());
             existingEmployee.setCasualLeaveBalance(updatedEmployeeData.getCasualLeaveBalance());
             existingEmployee.setPermissionAllowancePerMonth(updatedEmployeeData.getPermissionAllowancePerMonth());
+            existingEmployee.setPermissionHoursAllowed(updatedEmployeeData.getPermissionHoursAllowed());
+            existingEmployee.setAdditionalWorkingDaysConfig(updatedEmployeeData.getAdditionalWorkingDaysConfig());
 
             // Strong password update handling:
             // If password is present and non-blank in payload, treat it as NEW raw password
@@ -1197,9 +1205,13 @@ public class EmployeeController {
             masterEmployee.setWeekOff(sourceEmployee.getWeekOff());
             masterEmployee.setShiftStartTime(sourceEmployee.getShiftStartTime());
             masterEmployee.setShiftEndTime(sourceEmployee.getShiftEndTime());
+            masterEmployee.setShiftStart(sourceEmployee.getShiftStart());
+            masterEmployee.setShiftEnd(sourceEmployee.getShiftEnd());
             masterEmployee.setLeavePolicyType(sourceEmployee.getLeavePolicyType());
             masterEmployee.setCasualLeaveBalance(sourceEmployee.getCasualLeaveBalance());
             masterEmployee.setPermissionAllowancePerMonth(sourceEmployee.getPermissionAllowancePerMonth());
+            masterEmployee.setPermissionHoursAllowed(sourceEmployee.getPermissionHoursAllowed());
+            masterEmployee.setAdditionalWorkingDaysConfig(sourceEmployee.getAdditionalWorkingDaysConfig());
             masterEmployee.setCompanyCode(sourceEmployee.getCompanyCode());
             masterEmployee.setEmployeeCode(sourceEmployee.getEmployeeCode());
             masterEmployee.setClientId(sourceEmployee.getClientId());
@@ -1241,9 +1253,12 @@ public class EmployeeController {
         snapshot.put("Week Off", safeText(employee.getWeekOff()));
         snapshot.put("Shift Start Time", safeText(employee.getShiftStartTime()));
         snapshot.put("Shift End Time", safeText(employee.getShiftEndTime()));
+        snapshot.put("Shift Start", safeText(employee.getShiftStart()));
+        snapshot.put("Shift End", safeText(employee.getShiftEnd()));
         snapshot.put("Leave Policy", safeText(employee.getLeavePolicyType()));
         snapshot.put("Casual Leave Balance", safeText(employee.getCasualLeaveBalance()));
         snapshot.put("Permission Allowance/Month", safeText(employee.getPermissionAllowancePerMonth()));
+        snapshot.put("Permission Hours Allowed", safeText(employee.getPermissionHoursAllowed()));
         snapshot.put("Employee Code", safeText(employee.getEmployeeCode()));
         snapshot.put("Username", safeText(employee.getUsername()));
         return snapshot;

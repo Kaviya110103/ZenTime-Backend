@@ -153,19 +153,30 @@ public class ClientController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClientResponse> login(@RequestBody ClientLoginRequest req) {
-        if (req.getUsername() == null || req.getUsername().isBlank()
+        String username = req.getUsername() != null ? req.getUsername().trim() : null;
+
+        if (username == null || username.isBlank()
                 || req.getPassword() == null || req.getPassword().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
 
-        Optional<Client> clientOpt = clientService.findByUsername(req.getUsername());
+        Optional<Client> clientOpt = clientService.findByUsernameIgnoreCase(username);
         if (clientOpt.isEmpty()) {
             return ResponseEntity.status(401).build();
         }
 
         Client client = clientOpt.get();
-        if (!passwordEncoder.matches(req.getPassword(), client.getPassword())) {
+        String storedPassword = client.getPassword();
+        boolean hashMatch = storedPassword != null && passwordEncoder.matches(req.getPassword(), storedPassword);
+        boolean plainMatch = storedPassword != null && req.getPassword().equals(storedPassword);
+
+        if (!hashMatch && !plainMatch) {
             return ResponseEntity.status(401).build();
+        }
+
+        if (plainMatch) {
+            client.setPassword(passwordEncoder.encode(req.getPassword()));
+            clientService.save(client);
         }
 
         return ResponseEntity.ok(ClientResponse.fromEntity(client));
@@ -190,6 +201,10 @@ public class ClientController {
     @PutMapping(path = "/{id:\\d+}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> updateClient(@PathVariable Long id, @Valid @RequestBody Client client) {
         try {
+            if (client.getPassword() != null && !client.getPassword().isBlank()
+                    && !isBCryptHash(client.getPassword())) {
+                client.setPassword(passwordEncoder.encode(client.getPassword().trim()));
+            }
             Client updated = clientService.update(id, client);
             return ResponseEntity.ok(ClientResponse.fromEntity(updated));
         } catch (IllegalStateException e) {
@@ -252,5 +267,9 @@ public class ClientController {
     @DeleteMapping("/branch/{branchName}")
     public ResponseEntity<String> deleteBranch(@PathVariable String branchName) {
         return ResponseEntity.ok("Branch deleted successfully");
+    }
+
+    private boolean isBCryptHash(String password) {
+        return password.startsWith("$2a$") || password.startsWith("$2b$") || password.startsWith("$2y$");
     }
 }

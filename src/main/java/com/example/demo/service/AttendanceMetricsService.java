@@ -18,15 +18,13 @@ import java.util.Optional;
 
 @Service
 public class AttendanceMetricsService {
-    public static final int MAX_APPROVED_PERMISSIONS_PER_MONTH = 0;
-    public static final int MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH = 0;
+    public static final int MAX_APPROVED_PERMISSIONS_PER_MONTH = 2;
+    public static final int MAX_APPROVED_PERMISSION_MINUTES_PER_MONTH = 120;
     private static final int DEFAULT_MINUTES_PER_PERMISSION = 60;
 
     private static final DateTimeFormatter DB_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM = DateTimeFormatter.ofPattern("H:mm");
     private static final DateTimeFormatter TIME_FORMATTER_HH_MM_SS = DateTimeFormatter.ofPattern("H:mm:ss");
-    private static final LocalTime DEFAULT_SHIFT_START = LocalTime.of(10, 0);
-    private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(19, 0);
 
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
@@ -164,18 +162,21 @@ public class AttendanceMetricsService {
     }
 
     public int resolveMaxApprovedPermissionsPerMonth(Employee employee) {
-        if (employee == null || employee.getPermissionAllowancePerMonth() == null) {
-            return MAX_APPROVED_PERMISSIONS_PER_MONTH;
+        if (employee == null) {
+            return (int) PayrollCompatibilityDefaults.DEFAULT_PERMISSION_HOURS_ALLOWED;
+        }
+        if (employee.getPermissionHoursAllowed() != null) {
+            return (int) Math.ceil(Math.max(0.0, employee.getPermissionHoursAllowed()));
+        }
+        if (employee.getPermissionAllowancePerMonth() == null) {
+            return (int) PayrollCompatibilityDefaults.DEFAULT_PERMISSION_HOURS_ALLOWED;
         }
         return Math.max(0, employee.getPermissionAllowancePerMonth());
     }
 
     public int resolveMaxApprovedPermissionMinutesPerMonth(Employee employee) {
-        int permissionCount = resolveMaxApprovedPermissionsPerMonth(employee);
-        if (permissionCount <= 0) {
-            return 0;
-        }
-        return permissionCount * DEFAULT_MINUTES_PER_PERMISSION;
+        double allowedHours = PayrollCompatibilityDefaults.resolvePermissionHoursAllowed(employee);
+        return (int) Math.round(Math.max(0.0, allowedHours) * 60.0);
     }
 
     public PermissionUsage getApprovedPermissionUsage(Long employeeId, int month, int year, Long excludeLeaveId) {
@@ -254,23 +255,11 @@ public class AttendanceMetricsService {
     }
 
     private LocalTime resolveShiftStart(Employee employee) {
-        if (employee != null) {
-            Optional<LocalTime> parsed = parseFlexibleTime(employee.getShiftStartTime());
-            if (parsed.isPresent()) {
-                return parsed.get();
-            }
-        }
-        return DEFAULT_SHIFT_START;
+        return PayrollCompatibilityDefaults.resolveShiftStart(employee);
     }
 
     private LocalTime resolveShiftEnd(Employee employee) {
-        if (employee != null) {
-            Optional<LocalTime> parsed = parseFlexibleTime(employee.getShiftEndTime());
-            if (parsed.isPresent()) {
-                return parsed.get();
-            }
-        }
-        return DEFAULT_SHIFT_END;
+        return PayrollCompatibilityDefaults.resolveShiftEnd(employee);
     }
 
     private Optional<LocalTime> parseFlexibleTime(String raw) {

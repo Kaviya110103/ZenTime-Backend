@@ -61,6 +61,14 @@ public class ClientService {
         return repo.findByUsername(username);
     }
 
+    public Optional<Client> findByUsernameIgnoreCase(String username) {
+        return repo.findByUsernameIgnoreCase(username);
+    }
+
+    public Client save(Client client) {
+        return repo.save(client);
+    }
+
     public Optional<Client> findByEmail(String email) {
         return repo.findByEmailAddress(email);
     }

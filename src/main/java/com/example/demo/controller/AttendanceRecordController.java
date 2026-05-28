@@ -32,8 +32,12 @@ public class AttendanceRecordController {
     @Autowired
     private EmployeeRepository employeeRepository;
 
+    @Autowired
+    private com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService;
+
     @GetMapping
     public List<AttendanceRecord> getAllAttendanceRecords() {
+        schemaMaintenanceService.ensureEmployeeSchema();
         return attendanceRecordRepository.findAll();
     }
 
@@ -44,6 +48,7 @@ public class AttendanceRecordController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate endDate,
             @RequestParam(required = false) Integer month) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         
         List<AttendanceRecord> filteredRecords = attendanceRecordRepository.findAll(); // Basic implementation
         

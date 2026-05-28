@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -50,6 +51,18 @@ public class AttendanceRecord {
     private String TimoutReason;
 
     private Integer missedTimes; // Total missed minutes (timeIn + timeOut deviation)
+
+    @Column(name = "worked_hours", nullable = true)
+    private Double workedHours;
+
+    @Column(name = "overtime", nullable = true)
+    private Double overtime;
+
+    @Column(name = "permission_used", nullable = true)
+    private Double permissionUsed;
+
+    @Column(name = "shift_id", nullable = true)
+    private String shiftId;
 
     private Boolean overtimeApproved = false;
     private Boolean overtimeRequested = false;
@@ -108,6 +121,38 @@ public class AttendanceRecord {
 
     public void setMissedTimes(Integer missedTimes) {
         this.missedTimes = missedTimes;
+    }
+
+    public Double getWorkedHours() {
+        return workedHours;
+    }
+
+    public void setWorkedHours(Double workedHours) {
+        this.workedHours = workedHours;
+    }
+
+    public Double getOvertime() {
+        return overtime;
+    }
+
+    public void setOvertime(Double overtime) {
+        this.overtime = overtime;
+    }
+
+    public Double getPermissionUsed() {
+        return permissionUsed;
+    }
+
+    public void setPermissionUsed(Double permissionUsed) {
+        this.permissionUsed = permissionUsed;
+    }
+
+    public String getShiftId() {
+        return shiftId;
+    }
+
+    public void setShiftId(String shiftId) {
+        this.shiftId = shiftId;
     }
 
     public Boolean getOvertimeApproved() {

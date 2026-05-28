@@ -11,6 +11,10 @@ public record AttendanceRecordDTO(
         String location,
         String timoutReason,
         Integer missedTimes,
+        Double workedHours,
+        Double overtime,
+        Double permissionUsed,
+        String shiftId,
         String imageInBase64,
         String imageOutBase64
 ) {
@@ -24,6 +28,10 @@ public record AttendanceRecordDTO(
                 ar.getLocation(),
                 ar.getTimoutReason(),
                 ar.getMissedTimes(),
+                ar.getWorkedHours(),
+                ar.getOvertime(),
+                ar.getPermissionUsed(),
+                ar.getShiftId(),
                 ar.getImageIn()  != null ? Base64.getEncoder().encodeToString(ar.getImageIn())  : null,
                 ar.getImageOut() != null ? Base64.getEncoder().encodeToString(ar.getImageOut()) : null
         );

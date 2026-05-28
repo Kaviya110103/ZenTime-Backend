@@ -104,6 +104,12 @@ public class Employee {
     @Column(name = "shift_end_time")
     private String shiftEndTime;
 
+    @Column(name = "shift_start", nullable = true)
+    private String shiftStart;
+
+    @Column(name = "shift_end", nullable = true)
+    private String shiftEnd;
+
     @Column(name = "leave_policy_type")
     private String leavePolicyType;
 
@@ -112,6 +118,12 @@ public class Employee {
 
     @Column(name = "permission_allowance_per_month")
     private Integer permissionAllowancePerMonth;
+
+    @Column(name = "permission_hours_allowed", nullable = true)
+    private Double permissionHoursAllowed;
+
+    @Column(name = "additional_working_days", nullable = true)
+    private String additionalWorkingDaysConfig;
 
 @Column(name = "company_code")
     private String companyCode;
@@ -403,6 +415,22 @@ private LocalDateTime guestStartDate;
         this.shiftEndTime = shiftEndTime;
     }
 
+    public String getShiftStart() {
+        return shiftStart;
+    }
+
+    public void setShiftStart(String shiftStart) {
+        this.shiftStart = shiftStart;
+    }
+
+    public String getShiftEnd() {
+        return shiftEnd;
+    }
+
+    public void setShiftEnd(String shiftEnd) {
+        this.shiftEnd = shiftEnd;
+    }
+
     public String getLeavePolicyType() {
         return leavePolicyType;
     }
@@ -425,6 +453,22 @@ private LocalDateTime guestStartDate;
 
     public void setPermissionAllowancePerMonth(Integer permissionAllowancePerMonth) {
         this.permissionAllowancePerMonth = permissionAllowancePerMonth;
+    }
+
+    public Double getPermissionHoursAllowed() {
+        return permissionHoursAllowed;
+    }
+
+    public void setPermissionHoursAllowed(Double permissionHoursAllowed) {
+        this.permissionHoursAllowed = permissionHoursAllowed;
+    }
+
+    public String getAdditionalWorkingDaysConfig() {
+        return additionalWorkingDaysConfig;
+    }
+
+    public void setAdditionalWorkingDaysConfig(String additionalWorkingDaysConfig) {
+        this.additionalWorkingDaysConfig = additionalWorkingDaysConfig;
     }
 
 

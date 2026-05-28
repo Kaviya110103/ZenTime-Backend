@@ -44,6 +44,7 @@ public class EmployeeService {
             "overtime_request",
             "employee_push_tokens",
             "employee_net_payment",
+            "leave_policy",
             "employee_additional_working_day",
             "attendance_record"
     );
@@ -187,6 +188,7 @@ public class EmployeeService {
         safeDeleteByEmployeeIdIfPresent("overtime_request", "employee_id", id);
         safeDeleteByEmployeeIdIfPresent("employee_push_tokens", "employee_id", id);
         safeDeleteByEmployeeIdIfPresent("employee_net_payment", "employee_id", id);
+        safeDeleteByEmployeeIdIfPresent("leave_policy", "employee_id", id);
         safeDeleteByEmployeeIdIfPresent("employee_additional_working_day", "employee_id", id);
         safeDeleteByEmployeeIdIfPresent("attendance_record", "employee_id", id);
 

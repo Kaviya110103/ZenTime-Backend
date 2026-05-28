@@ -48,6 +48,9 @@ public class PayrollController {
     private AttendanceMetricsService attendanceMetricsService;
 
     @Autowired
+    private com.example.demo.service.SchemaMaintenanceService schemaMaintenanceService;
+
+    @Autowired
     private EmployeeAdditionalWorkingDayRepository employeeAdditionalWorkingDayRepository;
 
     @Autowired
@@ -63,6 +66,7 @@ public class PayrollController {
             @RequestParam int year,
             @RequestParam(required = false) Long clientId,
             @RequestParam(required = false, defaultValue = "false") boolean debug) {
+        schemaMaintenanceService.ensureEmployeeSchema();
         Optional<Employee> employeeOpt = clientId == null
                 ? employeeRepository.findById(employeeId)
                 : employeeRepository.findByIdAndClientId(employeeId, clientId);
@@ -109,6 +113,8 @@ public class PayrollController {
         response.put("weekOffDay", employee.getWeekOff());
         response.put("shiftStartTime", employee.getShiftStartTime());
         response.put("shiftEndTime", employee.getShiftEndTime());
+        response.put("shiftStart", employee.getShiftStart());
+        response.put("shiftEnd", employee.getShiftEnd());
         response.put("additionalWorkingDays", buildAdditionalWorkingDaysResponse(employee));
         response.put("month", month);
         response.put("year", year);
@@ -123,6 +129,7 @@ public class PayrollController {
         response.put("approvedLeaveTakenCount", approvedLeaveTakenCount);
         response.put("casualLeaveBalance", employee.getCasualLeaveBalance() == null ? 0 : employee.getCasualLeaveBalance());
         response.put("permissionAllowancePerMonth", permissionAllowancePerMonth);
+        response.put("permissionHoursAllowed", employee.getPermissionHoursAllowed() == null ? 2.0 : employee.getPermissionHoursAllowed());
         response.put("permissionAllowedMinutes", permissionAllowedMinutes);
         response.put("permissionTakenCount", permissionTakenCount);
         response.put("permissionTakenMinutes", permissionTakenMinutes);

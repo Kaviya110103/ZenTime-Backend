@@ -26,6 +26,7 @@ public class SchemaMaintenanceService {
 
         try {
             ensureEmployeeTableColumns();
+            ensureLeavePolicyTable();
             ensureAdditionalWorkingDaysTable();
             ensureEmployeeSalaryDetailsTableColumns();
             ensureAttendanceRecordColumns();
@@ -46,9 +47,39 @@ public class SchemaMaintenanceService {
     }
 
     private void ensureEmployeeTableColumns() {
+        ensureColumn("employee", "shift_start", "VARCHAR(16) NULL");
+        ensureColumn("employee", "shift_end", "VARCHAR(16) NULL");
+        ensureColumn("employee", "shift_start_time", "VARCHAR(16) NULL");
+        ensureColumn("employee", "shift_end_time", "VARCHAR(16) NULL");
         ensureColumn("employee", "leave_policy_type", "VARCHAR(32) NULL");
         ensureColumn("employee", "casual_leave_balance", "INT DEFAULT 0");
-        ensureColumn("employee", "permission_allowance_per_month", "INT DEFAULT 0");
+        ensureColumn("employee", "permission_allowance_per_month", "INT NULL");
+        ensureColumn("employee", "permission_hours_allowed", "DOUBLE NULL");
+        ensureColumn("employee", "additional_working_days", "TEXT NULL");
+    }
+
+    private void ensureLeavePolicyTable() {
+        if (tableExists("leave_policy")) {
+            ensureColumn("leave_policy", "employee_id", "BIGINT NULL");
+            ensureColumn("leave_policy", "casual_leave_allowed", "INT NULL");
+            ensureColumn("leave_policy", "sick_leave_allowed", "INT NULL");
+            ensureColumn("leave_policy", "earned_leave_allowed", "INT NULL");
+            return;
+        }
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS leave_policy (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    employee_id BIGINT NULL,
+                    casual_leave_allowed INT NULL,
+                    sick_leave_allowed INT NULL,
+                    earned_leave_allowed INT NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uk_leave_policy_employee (employee_id),
+                    CONSTRAINT fk_leave_policy_employee
+                        FOREIGN KEY (employee_id) REFERENCES employee(id)
+                        ON DELETE CASCADE
+                )
+                """);
     }
 
     private void ensureAdditionalWorkingDaysTable() {
@@ -86,10 +117,17 @@ public class SchemaMaintenanceService {
         }
         ensureColumn("attendance_record", "overtime_approved", "BIT DEFAULT 0");
         ensureColumn("attendance_record", "overtime_requested", "BIT DEFAULT 0");
+        ensureColumn("attendance_record", "worked_hours", "DOUBLE NULL");
+        ensureColumn("attendance_record", "overtime", "DOUBLE NULL");
+        ensureColumn("attendance_record", "permission_used", "DOUBLE NULL");
+        ensureColumn("attendance_record", "shift_id", "VARCHAR(64) NULL");
     }
 
     private void ensureOvertimeRequestTable() {
         if (tableExists("overtime_request")) {
+            ensureColumn("overtime_request", "employee_id", "BIGINT NULL");
+            ensureColumn("overtime_request", "date", "VARCHAR(16) NULL");
+            ensureColumn("overtime_request", "overtime_hours", "DOUBLE NOT NULL DEFAULT 0");
             ensureColumn("overtime_request", "status", "VARCHAR(16) NOT NULL DEFAULT 'PENDING'");
             ensureColumn("overtime_request", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
             ensureColumn("overtime_request", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
