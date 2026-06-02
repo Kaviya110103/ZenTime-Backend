@@ -20,6 +20,9 @@ public class OvertimeRequest {
     @Column(name = "overtime_hours", nullable = false)
     private Double overtimeHours = 0.0;
 
+    @Column(length = 500)
+    private String reason;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private OvertimeRequestStatus status = OvertimeRequestStatus.PENDING;
@@ -72,6 +75,14 @@ public class OvertimeRequest {
 
     public void setOvertimeHours(Double overtimeHours) {
         this.overtimeHours = overtimeHours;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
     }
 
     public OvertimeRequestStatus getStatus() {

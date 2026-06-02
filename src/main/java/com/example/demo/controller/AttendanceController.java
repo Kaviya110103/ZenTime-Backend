@@ -408,12 +408,17 @@ public ResponseEntity<String> markTimeIn(
             @RequestParam Long recordId,
             @RequestParam MultipartFile imageOut,
             @RequestParam(required = false) Boolean overtimeApproved,
-            @RequestParam(required = false) Boolean overtimeRequested) {
+            @RequestParam(required = false) Boolean overtimeRequested,
+            @RequestParam(required = false) String overtimeReason) {
         schemaMaintenanceService.ensureEmployeeSchema();
         Optional<AttendanceRecord> optionalRecord = attendanceRecordRepository.findById(recordId);
         if (optionalRecord.isPresent()) {
             AttendanceRecord record = optionalRecord.get();
             try {
+                if (Boolean.TRUE.equals(overtimeRequested)
+                        && (overtimeReason == null || overtimeReason.trim().isEmpty())) {
+                    return ResponseEntity.badRequest().body("Overtime reason is required.");
+                }
                 LocalDateTime now = LocalDateTime.now();
                 record.setTimeOut(now);
                 updateDerivedAttendanceHours(record);
@@ -437,7 +442,7 @@ public ResponseEntity<String> markTimeIn(
                         if (logoutTime.isAfter(shiftEnd)) {
                             overtimeMinutes = Duration.between(shiftEnd, logoutTime).toMinutes();
                         }
-                        double overtimeHours = Math.round((Math.max(overtimeMinutes, 0) / 60.0) * 100.0) / 100.0;
+                        double overtimeHours = Math.max(overtimeMinutes, 0) / 60.0;
                         if (overtimeHours > 0) {
                             OvertimeRequest request = overtimeRequestRepository
                                     .findFirstByEmployeeIdAndDateOrderByIdDesc(employee.getId(), record.getDate())
@@ -445,6 +450,7 @@ public ResponseEntity<String> markTimeIn(
                             request.setEmployee(employee);
                             request.setDate(record.getDate());
                             request.setOvertimeHours(overtimeHours);
+                            request.setReason(overtimeReason == null ? null : overtimeReason.trim());
                             request.setStatus(OvertimeRequestStatus.PENDING);
                             overtimeRequestRepository.save(request);
                             record.setOvertimeApproved(false);
@@ -1248,13 +1254,26 @@ private void updateDerivedAttendanceHours(AttendanceRecord record) {
         return;
     }
 
-    long workedMinutes = Duration.between(record.getTimeIn(), record.getTimeOut()).toMinutes();
+    LocalDateTime shiftStart = record.getTimeIn()
+            .toLocalDate()
+            .atTime(PayrollCompatibilityDefaults.resolveShiftStart(record.getEmployee()));
+    LocalDateTime shiftEnd = record.getTimeIn()
+            .toLocalDate()
+            .atTime(parseShiftEnd(record.getEmployee()));
+    if (!shiftEnd.isAfter(shiftStart)) {
+        shiftEnd = shiftEnd.plusDays(1);
+    }
+    LocalDateTime payableStart = record.getTimeIn().isAfter(shiftStart) ? record.getTimeIn() : shiftStart;
+    LocalDateTime payableEnd = record.getTimeOut().isBefore(shiftEnd) ? record.getTimeOut() : shiftEnd;
+    long workedMinutes = payableEnd.isAfter(payableStart)
+            ? Duration.between(payableStart, payableEnd).toMinutes()
+            : 0;
     record.setWorkedHours(Math.round((workedMinutes / 60.0) * 100.0) / 100.0);
 
-    LocalTime shiftEnd = parseShiftEnd(record.getEmployee());
+    LocalTime shiftEndTime = parseShiftEnd(record.getEmployee());
     LocalTime actualOut = record.getTimeOut().toLocalTime();
-    long overtimeMinutes = actualOut.isAfter(shiftEnd)
-            ? Duration.between(shiftEnd, actualOut).toMinutes()
+    long overtimeMinutes = actualOut.isAfter(shiftEndTime)
+            ? Duration.between(shiftEndTime, actualOut).toMinutes()
             : 0;
     record.setOvertime(Math.round((Math.max(0, overtimeMinutes) / 60.0) * 100.0) / 100.0);
 }

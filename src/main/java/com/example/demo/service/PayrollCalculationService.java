@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.MODELS.*;
 import com.example.demo.repo.AttendanceRecordRepository;
+import com.example.demo.repo.AttendanceSupportRequestRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.HolidayRepository;
 import com.example.demo.repo.LeavePolicyRepository;
@@ -28,6 +29,7 @@ public class PayrollCalculationService {
 
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
+    private final AttendanceSupportRequestRepository attendanceSupportRequestRepository;
     private final LeavePermissionRepository leavePermissionRepository;
     private final HolidayRepository holidayRepository;
     private final LeavePolicyRepository leavePolicyRepository;
@@ -37,6 +39,7 @@ public class PayrollCalculationService {
     public PayrollCalculationService(
             EmployeeRepository employeeRepository,
             AttendanceRecordRepository attendanceRecordRepository,
+            AttendanceSupportRequestRepository attendanceSupportRequestRepository,
             LeavePermissionRepository leavePermissionRepository,
             HolidayRepository holidayRepository,
             LeavePolicyRepository leavePolicyRepository,
@@ -44,6 +47,7 @@ public class PayrollCalculationService {
             OvertimeRequestRepository overtimeRequestRepository) {
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
+        this.attendanceSupportRequestRepository = attendanceSupportRequestRepository;
         this.leavePermissionRepository = leavePermissionRepository;
         this.holidayRepository = holidayRepository;
         this.leavePolicyRepository = leavePolicyRepository;
@@ -95,6 +99,8 @@ public class PayrollCalculationService {
         WorkSummary workSummary =
                 buildWorkedMinutesByDate(employee, month, year);
         Map<LocalDate, Integer> workedMinutesByDate = workSummary.workedMinutesByDate;
+        Map<LocalDate, Integer> supportApprovedMinutesByDate =
+                buildSupportApprovedMinutesByDate(employeeId, month, year);
 
         int overtimeMinutes = 0;
         for (Map.Entry<LocalDate, Integer> entry : workedMinutesByDate.entrySet()) {
@@ -133,13 +139,12 @@ public class PayrollCalculationService {
         int unpaidCasualDays = 0;
         int workedDays = 0;
 
-        int expectedMinutes = 0;
-
         Set<LocalDate> workedDates = new HashSet<>();
         Set<LocalDate> weekOffDates = new HashSet<>();
         Set<LocalDate> publicHolidayDates = new HashSet<>();
         Set<LocalDate> paidLeaveDates = new HashSet<>();
         Set<LocalDate> paidCasualDates = new HashSet<>();
+        Set<LocalDate> presentWorkingDates = new HashSet<>();
 
         for (Map.Entry<LocalDate, Integer> entry : scheduledMinutesByDate.entrySet()) {
             LocalDate date = entry.getKey();
@@ -147,7 +152,6 @@ public class PayrollCalculationService {
 
             if (scheduledMinutes > 0) {
                 scheduledDays++;
-                expectedMinutes += scheduledMinutes;
             } else {
                 weekOffDates.add(date);
             }
@@ -180,8 +184,6 @@ public class PayrollCalculationService {
                 workedDates.add(entry.getKey());
             }
         }
-        workedDays = workedDates.size();
-
         Set<LocalDate> payableDates = new HashSet<>();
         payableDates.addAll(workedDates);
         payableDates.addAll(weekOffDates);
@@ -194,40 +196,95 @@ public class PayrollCalculationService {
         int payableDays = Math.min(daysInMonth, payableDates.size());
         int derivedUnpaidLeaveDays = Math.max(0, daysInMonth - payableDays);
 
-        int absentDays = derivedUnpaidLeaveDays;
-        int absentMinutes = 0;
-        int payableMinutes = 0;
-        for (LocalDate date = firstDate; !date.isAfter(lastDate); date = date.plusDays(1)) {
-            int scheduledMinutes = Math.max(0, scheduledMinutesByDate.getOrDefault(date, 0));
-            if (payableDates.contains(date)) {
-                payableMinutes += scheduledMinutes;
-            } else {
-                absentMinutes += scheduledMinutes;
-            }
-        }
-
         int approvedPermissionMinutes = Math.max(
                 calculateApprovedPermissionMinutes(employeeId, month, year),
                 workSummary.totalPermissionUsedMinutes());
         int allowedPermissionMinutes = resolveAllowedPermissionMinutes(employee);
-        int payablePermissionMinutes = Math.min(approvedPermissionMinutes, allowedPermissionMinutes);
-        int actualWorkedMinutes = Math.max(0, workSummary.totalWorkedMinutes());
-        int adjustedWorkedMinutes = Math.min(expectedMinutes, actualWorkedMinutes + payablePermissionMinutes);
+        int extraPermissionLopMinutes = Math.max(0, approvedPermissionMinutes - allowedPermissionMinutes);
 
-        double expectedHours = minutesToHours(expectedMinutes);
-        double payableHours = minutesToHours(Math.min(expectedMinutes, payableMinutes + payablePermissionMinutes));
-        double workedHours = minutesToHours(adjustedWorkedMinutes);
         double overtimeHours = minutesToHours(overtimeMinutes);
         double salary = employee.getSalary() == null ? 0.0 : employee.getSalary();
-        double perDaySalary = daysInMonth > 0 ? salary / daysInMonth : 0.0;
-        double perMinuteSalary = expectedMinutes > 0 ? salary / expectedMinutes : 0.0;
-        double perHourSalary = perMinuteSalary * 60.0;
-        double netSalary = salary - (derivedUnpaidLeaveDays * perDaySalary);
-        if (netSalary < 0) {
-            netSalary = 0.0;
+        Map<LocalDate, Double> paidNonWorkingFractionByDate = new HashMap<>();
+        for (LocalDate date : weekOffDates) {
+            mergePaidNonWorkingFraction(paidNonWorkingFractionByDate, date, 1.0);
+        }
+        for (Map.Entry<LocalDate, Double> entry : holidayFractionByDate.entrySet()) {
+            mergePaidNonWorkingFraction(paidNonWorkingFractionByDate, entry.getKey(), entry.getValue());
+        }
+        for (LocalDate date : paidLeaveDates) {
+            mergePaidNonWorkingFraction(paidNonWorkingFractionByDate, date, 1.0);
         }
 
-        double missingHours = Math.max(0.0, minutesToHours(absentMinutes));
+        double actualWorkingMinutes = 0.0;
+        double payablePresentMinutes = 0.0;
+        double attendancePresentMinutesTotal = 0.0;
+        int expectedWorkingDays = 0;
+        double scheduledWorkingDays = 0.0;
+        double payablePresentDays = 0.0;
+        for (LocalDate date = firstDate; !date.isAfter(lastDate); date = date.plusDays(1)) {
+            int scheduledMinutes = Math.max(0, scheduledMinutesByDate.getOrDefault(date, 0));
+            double workingFraction = Math.max(
+                    0.0,
+                    1.0 - paidNonWorkingFractionByDate.getOrDefault(date, 0.0));
+            double scheduledWorkingMinutes = scheduledMinutes * workingFraction;
+            if (scheduledWorkingMinutes > 0) {
+                expectedWorkingDays++;
+            }
+            if (scheduledMinutes > 0) {
+                scheduledWorkingDays += workingFraction;
+            }
+            int workedMinutes = Math.max(0, workedMinutesByDate.getOrDefault(date, 0));
+            double attendancePresentMinutes = Math.min(workedMinutes, scheduledWorkingMinutes);
+            attendancePresentMinutesTotal += attendancePresentMinutes;
+            if (attendancePresentMinutes > 0) {
+                presentWorkingDates.add(date);
+            }
+            int configuredSupportMinutes = supportApprovedMinutesByDate.getOrDefault(date, 0);
+            double supportApprovedMinutes = configuredSupportMinutes > 0
+                    ? Math.min(configuredSupportMinutes, scheduledWorkingMinutes)
+                    : supportApprovedMinutesByDate.containsKey(date) ? scheduledWorkingMinutes : 0.0;
+            double creditedPresentMinutes = Math.min(
+                    scheduledWorkingMinutes,
+                    attendancePresentMinutes + supportApprovedMinutes);
+            actualWorkingMinutes += scheduledWorkingMinutes;
+            payablePresentMinutes += creditedPresentMinutes;
+            if (scheduledMinutes > 0) {
+                payablePresentDays += creditedPresentMinutes / scheduledMinutes;
+            }
+        }
+        int normalShiftMinutes = resolveNormalShiftMinutes(employee);
+        double casualLeaveExcludedDays = Math.min(Math.max(0, casualBalance), scheduledWorkingDays);
+        double casualLeaveExcludedMinutes = Math.min(
+                actualWorkingMinutes,
+                casualLeaveExcludedDays * normalShiftMinutes);
+        scheduledWorkingDays = Math.max(0.0, scheduledWorkingDays - casualLeaveExcludedDays);
+        actualWorkingMinutes = Math.max(0.0, actualWorkingMinutes - casualLeaveExcludedMinutes);
+        expectedWorkingDays = Math.max(0, (int) Math.floor(scheduledWorkingDays));
+        payablePresentMinutes = Math.max(0.0, payablePresentMinutes - extraPermissionLopMinutes);
+        payablePresentMinutes = Math.min(payablePresentMinutes, actualWorkingMinutes);
+        if (normalShiftMinutes > 0) {
+            payablePresentDays -= extraPermissionLopMinutes / (double) normalShiftMinutes;
+        }
+        payablePresentDays = Math.max(0.0, Math.min(payablePresentDays, scheduledWorkingDays));
+        double absentPayableDays = Math.max(0.0, scheduledWorkingDays - payablePresentDays);
+        int absentMinutes = (int) Math.round(Math.max(0.0, actualWorkingMinutes - payablePresentMinutes));
+        int absentDays = normalShiftMinutes > 0
+                ? (int) Math.ceil(absentMinutes / (double) normalShiftMinutes)
+                : 0;
+
+        double perMinuteSalary = actualWorkingMinutes > 0 ? salary / actualWorkingMinutes : 0.0;
+        double perHourSalary = perMinuteSalary * 60.0;
+        double perDaySalary = scheduledWorkingDays > 0 ? salary / scheduledWorkingDays : 0.0;
+        double netSalary = perMinuteSalary * payablePresentMinutes;
+
+        double expectedHours = minutesToHours(actualWorkingMinutes);
+        double payableHours = minutesToHours(payablePresentMinutes);
+        double workedHours = minutesToHours(attendancePresentMinutesTotal);
+        double missingHours = minutesToHours(absentMinutes);
+        int expectedWorkingMinutes = (int) Math.round(actualWorkingMinutes);
+        int presentWorkingMinutes = (int) Math.round(attendancePresentMinutesTotal);
+        int payablePresentMinutesRounded = (int) Math.round(payablePresentMinutes);
+        workedDays = presentWorkingDates.size();
 
         return new PayrollResult(
                 employeeId,
@@ -235,6 +292,7 @@ public class PayrollCalculationService {
                 month,
                 daysInMonth,
                 scheduledDays,
+                expectedWorkingDays,
                 holidayDaysFull,
                 holidayDaysHalf,
                 paidLeaveDays,
@@ -247,6 +305,13 @@ public class PayrollCalculationService {
                 expectedHours,
                 payableHours,
                 workedHours,
+                expectedWorkingMinutes,
+                presentWorkingMinutes,
+                payablePresentMinutesRounded,
+                scheduledWorkingDays,
+                payablePresentDays,
+                absentPayableDays,
+                perDaySalary,
                 perMinuteSalary,
                 perHourSalary,
                 missingHours,
@@ -351,50 +416,6 @@ public class PayrollCalculationService {
         }
 
         return rows;
-    }
-
-    private Map<LocalDate, Integer> buildSchedule(
-            Employee employee,
-            SchedulePolicy policy,
-            LocalDate start,
-            LocalDate end) {
-        Map<AdditionalWorkingDayType, EmployeeAdditionalWorkingDay> additionalMap = new EnumMap<>(AdditionalWorkingDayType.class);
-        if (employee != null && employee.getAdditionalWorkingDays() != null) {
-            for (EmployeeAdditionalWorkingDay day : employee.getAdditionalWorkingDays()) {
-                if (day != null && day.getDayType() != null) {
-                    additionalMap.putIfAbsent(day.getDayType(), day);
-                }
-            }
-        }
-
-        Map<LocalDate, Integer> schedule = new LinkedHashMap<>();
-        Map<LocalDate, Integer> saturdayIndex = buildWeekdayIndex(start, end, DayOfWeek.SATURDAY);
-        Map<LocalDate, Integer> sundayIndex = buildWeekdayIndex(start, end, DayOfWeek.SUNDAY);
-
-        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-            DayOfWeek dayOfWeek = date.getDayOfWeek();
-            boolean isWeekOff = policy.isWeekOff(dayOfWeek);
-
-            EmployeeAdditionalWorkingDay override = resolveAdditionalOverride(
-                    date,
-                    saturdayIndex,
-                    sundayIndex,
-                    additionalMap);
-
-            int scheduledMinutes;
-            if (override != null) {
-                scheduledMinutes = resolveShiftMinutes(override.getTimeIn(), override.getTimeOut());
-            } else if (isWeekOff) {
-                scheduledMinutes = 0;
-            } else {
-                LocalTime shiftStart = PayrollCompatibilityDefaults.resolveShiftStart(employee);
-                LocalTime shiftEnd = PayrollCompatibilityDefaults.resolveShiftEnd(employee);
-                scheduledMinutes = Math.max((int) Duration.between(shiftStart, shiftEnd).toMinutes(), 0);
-            }
-
-            schedule.put(date, scheduledMinutes);
-        }
-        return schedule;
     }
 
     private EmployeeAdditionalWorkingDay resolveAdditionalOverride(
@@ -506,7 +527,7 @@ public class PayrollCalculationService {
             int year) {
         Long employeeId = employee == null ? null : employee.getId();
         if (employeeId == null) {
-            return new WorkSummary(new HashMap<>(), new HashSet<>(), new HashMap<>(), 0, 0);
+            return new WorkSummary(new HashMap<>(), new HashSet<>(), new HashMap<>(), 0);
         }
         List<AttendanceRecord> records = attendanceRecordRepository.findByEmployeeId(employeeId);
         Map<LocalDate, Integer> workedMinutesByDate = new HashMap<>();
@@ -535,7 +556,6 @@ public class PayrollCalculationService {
                 entry.latestTimeOut = normalizedOut;
                 entry.latestTimeOutTime = normalizedOut.toLocalTime();
             }
-            entry.totalWorkedMinutes += minutes;
             entry.recordedOvertimeMinutes += resolveRecordedOvertimeMinutes(record);
             entry.permissionUsedMinutes += resolvePermissionUsedMinutes(record);
             workEntries.put(date, entry);
@@ -557,15 +577,34 @@ public class PayrollCalculationService {
             overtimeApprovedDates.add(requestDate);
         }
 
-        int totalWorkedMinutes = 0;
         int totalPermissionUsedMinutes = 0;
-        for (Integer minutes : workedMinutesByDate.values()) {
-            totalWorkedMinutes += minutes == null ? 0 : minutes;
-        }
         for (WorkEntry entry : workEntries.values()) {
             totalPermissionUsedMinutes += entry == null ? 0 : entry.permissionUsedMinutes;
         }
-        return new WorkSummary(workedMinutesByDate, overtimeApprovedDates, workEntries, totalWorkedMinutes, totalPermissionUsedMinutes);
+        return new WorkSummary(workedMinutesByDate, overtimeApprovedDates, workEntries, totalPermissionUsedMinutes);
+    }
+
+    private Map<LocalDate, Integer> buildSupportApprovedMinutesByDate(Long employeeId, int month, int year) {
+        if (employeeId == null) {
+            return Collections.emptyMap();
+        }
+        Map<LocalDate, Integer> approvedMinutesByDate = new HashMap<>();
+        List<AttendanceSupportRequest> approvedRequests =
+                attendanceSupportRequestRepository.findByEmployeeIdAndStatus(
+                        employeeId,
+                        AttendanceSupportStatus.APPROVED);
+        for (AttendanceSupportRequest request : approvedRequests) {
+            if (request == null || request.getAttendanceDate() == null
+                    || request.getAttendanceDate().getMonthValue() != month
+                    || request.getAttendanceDate().getYear() != year) {
+                continue;
+            }
+            int approvedMinutes = request.getApprovedMinutes() == null
+                    ? 0
+                    : Math.max(0, request.getApprovedMinutes());
+            approvedMinutesByDate.merge(request.getAttendanceDate(), approvedMinutes, Math::max);
+        }
+        return approvedMinutesByDate;
     }
 
     private int resolveWorkedMinutes(AttendanceRecord record, LocalDateTime normalizedIn, LocalDateTime normalizedOut) {
@@ -629,10 +668,6 @@ public class PayrollCalculationService {
             totalMinutes += (int) Duration.between(start, end).toMinutes();
         }
         return Math.max(0, totalMinutes);
-    }
-
-    private int resolveAllowedPermissionMinutes(Employee employee) {
-        return (int) Math.round(PayrollCompatibilityDefaults.resolvePermissionHoursAllowed(employee) * 60.0);
     }
 
     private SchedulePolicy resolveSchedulePolicy(Employee employee) {
@@ -761,11 +796,24 @@ public class PayrollCalculationService {
         }
     }
 
-    private int resolveShiftMinutes(String startRaw, String endRaw) {
-        LocalTime start = parseFlexibleTime(startRaw).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_START);
-        LocalTime end = parseFlexibleTime(endRaw).orElse(PayrollCompatibilityDefaults.DEFAULT_SHIFT_END);
-        int minutes = (int) Duration.between(start, end).toMinutes();
-        return Math.max(minutes, 0);
+    private int resolveNormalShiftMinutes(Employee employee) {
+        LocalTime start = PayrollCompatibilityDefaults.resolveShiftStart(employee);
+        LocalTime end = PayrollCompatibilityDefaults.resolveShiftEnd(employee);
+        return Math.max((int) Duration.between(start, end).toMinutes(), 0);
+    }
+
+    private int resolveAllowedPermissionMinutes(Employee employee) {
+        return (int) Math.round(PayrollCompatibilityDefaults.resolvePermissionHoursAllowed(employee) * 60.0);
+    }
+
+    private void mergePaidNonWorkingFraction(
+            Map<LocalDate, Double> fractionsByDate,
+            LocalDate date,
+            Double fraction) {
+        if (date == null || fraction == null || fraction <= 0) {
+            return;
+        }
+        fractionsByDate.merge(date, Math.min(1.0, fraction), Math::max);
     }
 
     private Optional<LocalTime> parseFlexibleTime(String raw) {
@@ -785,7 +833,7 @@ public class PayrollCalculationService {
         }
     }
 
-    private double minutesToHours(int minutes) {
+    private double minutesToHours(double minutes) {
         return Math.round((minutes / 60.0) * 100.0) / 100.0;
     }
 
@@ -829,13 +877,18 @@ public class PayrollCalculationService {
         }
 
         void applyCasualBalance(Map<LocalDate, Integer> scheduledMinutesByDate, int balance) {
+            int remainingBalance = Math.max(0, balance);
             for (LocalDate date : casualLeaveDates) {
                 Integer scheduledMinutes = scheduledMinutesByDate.get(date);
                 if (scheduledMinutes == null || scheduledMinutes <= 0) {
                     continue;
                 }
-                // Business rule: approved casual leaves are always paid.
-                paidCasualDates.add(date);
+                if (remainingBalance > 0) {
+                    paidCasualDates.add(date);
+                    remainingBalance--;
+                } else {
+                    unpaidCasualDates.add(date);
+                }
             }
         }
     }
@@ -844,23 +897,16 @@ public class PayrollCalculationService {
         private final Map<LocalDate, Integer> workedMinutesByDate;
         private final Set<LocalDate> overtimeApprovedDates;
         private final Map<LocalDate, WorkEntry> workEntries;
-        private final int totalWorkedMinutes;
         private final int totalPermissionUsedMinutes;
 
         private WorkSummary(Map<LocalDate, Integer> workedMinutesByDate,
                             Set<LocalDate> overtimeApprovedDates,
                             Map<LocalDate, WorkEntry> workEntries,
-                            int totalWorkedMinutes,
                             int totalPermissionUsedMinutes) {
             this.workedMinutesByDate = workedMinutesByDate;
             this.overtimeApprovedDates = overtimeApprovedDates;
             this.workEntries = workEntries;
-            this.totalWorkedMinutes = totalWorkedMinutes;
             this.totalPermissionUsedMinutes = totalPermissionUsedMinutes;
-        }
-
-        private int totalWorkedMinutes() {
-            return totalWorkedMinutes;
         }
 
         private int totalPermissionUsedMinutes() {
@@ -873,7 +919,6 @@ public class PayrollCalculationService {
         private LocalDateTime latestTimeOut;
         private LocalTime earliestTimeInTime;
         private LocalTime latestTimeOutTime;
-        private int totalWorkedMinutes = 0;
         private int recordedOvertimeMinutes = 0;
         private int permissionUsedMinutes = 0;
     }
@@ -922,7 +967,7 @@ public class PayrollCalculationService {
                 continue;
             }
 
-            if (isWeekOff) {
+            if (isWeekOff || dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
                 schedule.put(date, new ShiftWindow(null, null, 0));
                 continue;
             }
@@ -1006,6 +1051,7 @@ public class PayrollCalculationService {
             int month,
             int daysInMonth,
             int scheduledDays,
+            int expectedWorkingDays,
             int holidayDaysFull,
             int holidayDaysHalf,
             int paidLeaveDays,
@@ -1018,13 +1064,20 @@ public class PayrollCalculationService {
             double expectedHours,
             double payableHours,
             double workedHours,
+            int expectedWorkingMinutes,
+            int presentWorkingMinutes,
+            int payablePresentMinutes,
+            double scheduledWorkingDays,
+            double payablePresentDays,
+            double absentPayableDays,
+            double perDaySalary,
             double perMinuteSalary,
             double perHourSalary,
             double missingHours,
             double netSalary,
             double overtimeHours) {
         public static PayrollResult empty() {
-            return new PayrollResult(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new PayrollResult(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

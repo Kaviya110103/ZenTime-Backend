@@ -67,6 +67,7 @@ public class OvertimeRequestController {
             row.put("branch", employee.getBranch());
             row.put("date", request.getDate());
             row.put("overtimeHours", request.getOvertimeHours() == null ? 0.0 : request.getOvertimeHours());
+            row.put("reason", request.getReason());
             row.put("status", request.getStatus() == null ? OvertimeRequestStatus.PENDING.name() : request.getStatus().name());
             row.put("createdAt", request.getCreatedAt());
             row.put("updatedAt", request.getUpdatedAt());

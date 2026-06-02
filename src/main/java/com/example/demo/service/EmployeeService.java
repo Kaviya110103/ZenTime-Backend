@@ -42,6 +42,7 @@ public class EmployeeService {
             "leave_permission",
             "location_requests",
             "overtime_request",
+            "attendance_support_request",
             "employee_push_tokens",
             "employee_net_payment",
             "leave_policy",

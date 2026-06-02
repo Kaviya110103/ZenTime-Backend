@@ -12,22 +12,23 @@ import java.util.EnumMap;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+
+import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.MODELS.AdditionalWorkingDayType;
 import com.example.demo.MODELS.AttendanceRecord;
-import com.example.demo.MODELS.Client;
 import com.example.demo.MODELS.Employee;
 import com.example.demo.MODELS.EmployeeAdditionalWorkingDay;
 import com.example.demo.MODELS.Holiday;
 import com.example.demo.MODELS.LeavePermission;
 import com.example.demo.repo.AttendanceRecordRepository;
-import com.example.demo.repo.ClientRepository;
 import com.example.demo.repo.EmployeeRepository;
 import com.example.demo.repo.HolidayRepository;
 import com.example.demo.repo.LeavePermissionRepository;
@@ -48,18 +49,21 @@ public class AttendanceSchedulerService {
     @Autowired
     private HolidayRepository holidayRepository;
 
-    @Autowired
-    private ClientRepository clientRepository;
-
     @Value("${tenant.routing.enabled:false}")
     private boolean routingEnabled;
 
+private final JdbcTemplate masterJdbcTemplate;
 private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Kolkata");
 private static final String SWAP_WEEKOFF_TYPE = "swap weekoff";
 
+public AttendanceSchedulerService(@Qualifier("masterDataSource") DataSource masterDataSource) {
+    this.masterJdbcTemplate = new JdbcTemplate(masterDataSource);
+}
+
    // 🕐 Scheduled to run every day at 3:00 PM
-@Scheduled(cron = "0 0 15 * * ?", zone = "Asia/Kolkata")
+// Retry after 3 PM so a restart at exactly 3 PM does not skip the day's absences.
+@Scheduled(cron = "0 */5 15-23 * * ?", zone = "Asia/Kolkata")
 public void autoMarkAbsentAt3PM() {
     int updated = runAutoAbsentForToday();
     System.out.println("Auto absent scheduler completed for " + nowInBusinessZone().toLocalDate() + ". updatedAbsentCount=" + updated);
@@ -157,6 +161,9 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
         AttendanceRecord existing = attendanceRecords.get(0);
         String status = existing.getAttendanceStatus() == null ? "" : existing.getAttendanceStatus().trim();
         if ("Leave".equalsIgnoreCase(status) || "On Leave".equalsIgnoreCase(status)) {
+            return 0;
+        }
+        if ("Absent".equalsIgnoreCase(status)) {
             return 0;
         }
         boolean hasTimeIn = existing.getTimeIn() != null;
@@ -354,29 +361,21 @@ private LocalDate parseLeaveDate(String raw) {
 }
 
 private List<String> resolveTenantTargets() {
-    List<Client> clients = clientRepository.findAll();
-
-    List<String> activeTargets = clients.stream()
-            .filter(client -> client != null
-                    && client.getTenantDbName() != null
-                    && !client.getTenantDbName().isBlank()
-                    && "ACTIVE".equalsIgnoreCase(client.getProvisioningStatus()))
-            .map(Client::getTenantDbName)
-            .distinct()
-            .collect(Collectors.toList());
+    List<String> activeTargets = masterJdbcTemplate.queryForList(
+            "SELECT DISTINCT tenant_db_name FROM clients "
+                    + "WHERE tenant_db_name IS NOT NULL AND tenant_db_name <> '' "
+                    + "AND provisioning_status = 'ACTIVE'",
+            String.class);
 
     if (!activeTargets.isEmpty()) {
         return activeTargets;
     }
 
     // Fallback for legacy clients where provisioning_status may be null/empty.
-    return clients.stream()
-            .filter(client -> client != null
-                    && client.getTenantDbName() != null
-                    && !client.getTenantDbName().isBlank())
-            .map(Client::getTenantDbName)
-            .distinct()
-            .collect(Collectors.toList());
+    return masterJdbcTemplate.queryForList(
+            "SELECT DISTINCT tenant_db_name FROM clients "
+                    + "WHERE tenant_db_name IS NOT NULL AND tenant_db_name <> ''",
+            String.class);
 }
 
 private ZonedDateTime nowInBusinessZone() {

@@ -15,8 +15,10 @@ public class ClientService {
             "employee",
             "attendance_record",
             "leave_permission",
+            "attendance_support_request",
             "locations",
-            "location_requests"
+            "location_requests",
+            "holidays"
     );
 
     private final ClientRepository repo;
@@ -85,6 +87,10 @@ public class ClientService {
             existing.setMobileNumber(updated.getMobileNumber());
             existing.setEmailAddress(updated.getEmailAddress());
             existing.setAddress(updated.getAddress());
+            existing.setPincode(updated.getPincode());
+            existing.setCity(updated.getCity());
+            existing.setState(updated.getState());
+            existing.setCountry(updated.getCountry());
             existing.setEmployeeCount(updated.getEmployeeCount());
             existing.setRegisteredDate(updated.getRegisteredDate());
             existing.setWorkingHours(updated.getWorkingHours());
@@ -136,7 +142,11 @@ public class ClientService {
     }
 
     public void delete(Long id) {
-        repo.deleteById(id);
+        Client existing = repo.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Client not found."));
+        repo.delete(existing);
+        repo.flush();
+        tenantDatabaseProvisioningService.dropTenantDatabase(existing.getTenantDbName());
     }
 
     private String normalizeCompanyCode(String companyCode) {

@@ -31,6 +31,8 @@ public class SchemaMaintenanceService {
             ensureEmployeeSalaryDetailsTableColumns();
             ensureAttendanceRecordColumns();
             ensureOvertimeRequestTable();
+            ensureAttendanceSupportRequestTable();
+            ensureHolidayTable();
             ensuredSchemas.put(dbName, Boolean.TRUE);
         } catch (RuntimeException ex) {
             ensuredSchemas.remove(dbName);
@@ -128,6 +130,7 @@ public class SchemaMaintenanceService {
             ensureColumn("overtime_request", "employee_id", "BIGINT NULL");
             ensureColumn("overtime_request", "date", "VARCHAR(16) NULL");
             ensureColumn("overtime_request", "overtime_hours", "DOUBLE NOT NULL DEFAULT 0");
+            ensureColumn("overtime_request", "reason", "VARCHAR(500) NULL");
             ensureColumn("overtime_request", "status", "VARCHAR(16) NOT NULL DEFAULT 'PENDING'");
             ensureColumn("overtime_request", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
             ensureColumn("overtime_request", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
@@ -139,6 +142,7 @@ public class SchemaMaintenanceService {
                     employee_id BIGINT NOT NULL,
                     date VARCHAR(16) NOT NULL,
                     overtime_hours DOUBLE NOT NULL DEFAULT 0,
+                    reason VARCHAR(500) NULL,
                     status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -146,6 +150,56 @@ public class SchemaMaintenanceService {
                     KEY idx_overtime_request_employee (employee_id),
                     KEY idx_overtime_request_date (date),
                     CONSTRAINT fk_overtime_request_employee
+                        FOREIGN KEY (employee_id) REFERENCES employee(id)
+                        ON DELETE CASCADE
+                )
+                """);
+    }
+
+    private void ensureHolidayTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS holidays (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    client_id BIGINT NOT NULL,
+                    holiday_date DATE NOT NULL,
+                    holiday_name VARCHAR(255) NOT NULL,
+                    holiday_type VARCHAR(16) NOT NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uk_holidays_client_date (client_id, holiday_date)
+                )
+                """);
+    }
+
+    private void ensureAttendanceSupportRequestTable() {
+        if (tableExists("attendance_support_request")) {
+            ensureColumn("attendance_support_request", "employee_id", "BIGINT NULL");
+            ensureColumn("attendance_support_request", "attendance_date", "DATE NULL");
+            ensureColumn("attendance_support_request", "reason", "VARCHAR(500) NULL");
+            ensureColumn("attendance_support_request", "status", "VARCHAR(16) NOT NULL DEFAULT 'PENDING'");
+            ensureColumn("attendance_support_request", "approved_by", "VARCHAR(255) NULL");
+            ensureColumn("attendance_support_request", "approved_at", "DATETIME NULL");
+            ensureColumn("attendance_support_request", "approved_minutes", "INT NULL");
+            ensureColumn("attendance_support_request", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+            ensureColumn("attendance_support_request", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+            return;
+        }
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS attendance_support_request (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    employee_id BIGINT NOT NULL,
+                    attendance_date DATE NOT NULL,
+                    reason VARCHAR(500) NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+                    approved_by VARCHAR(255) NULL,
+                    approved_at DATETIME NULL,
+                    approved_minutes INT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_attendance_support_employee (employee_id),
+                    KEY idx_attendance_support_date (attendance_date),
+                    KEY idx_attendance_support_status (status),
+                    CONSTRAINT fk_attendance_support_employee
                         FOREIGN KEY (employee_id) REFERENCES employee(id)
                         ON DELETE CASCADE
                 )

@@ -4,8 +4,12 @@
 
     import org.springframework.boot.SpringApplication;
     import org.springframework.boot.autoconfigure.SpringBootApplication;
+    import org.springframework.boot.CommandLineRunner;
+    import org.springframework.context.annotation.Bean;
     import org.springframework.scheduling.annotation.EnableScheduling;
     
+    import com.example.demo.service.SchemaMaintenanceService;
+
     import jakarta.annotation.PostConstruct;
     import jakarta.servlet.http.HttpServlet;
     @SpringBootApplication
@@ -24,7 +28,11 @@
             System.out.println("Default timezone set to Asia/Kolkata");
         }
 
+        @Bean
+        CommandLineRunner ensureSchemaOnStartup(SchemaMaintenanceService schemaMaintenanceService) {
+            return args -> schemaMaintenanceService.ensureEmployeeSchema();
+        }
+
         }
     
 
-        

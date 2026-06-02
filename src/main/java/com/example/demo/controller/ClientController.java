@@ -61,6 +61,10 @@ public class ClientController {
         private String mobileNumber;
         private String emailAddress;
         private String address;
+        private String pincode;
+        private String city;
+        private String state;
+        private String country;
         private Integer employeeCount;
         private String registeredDate;
         private String workingHours;
@@ -77,6 +81,10 @@ public class ClientController {
             r.mobileNumber = c.getMobileNumber();
             r.emailAddress = c.getEmailAddress();
             r.address = c.getAddress();
+            r.pincode = c.getPincode();
+            r.city = c.getCity();
+            r.state = c.getState();
+            r.country = c.getCountry();
             r.employeeCount = c.getEmployeeCount();
             r.registeredDate = c.getRegisteredDate() != null ? c.getRegisteredDate().toString() : null;
             r.workingHours = c.getWorkingHours();
@@ -93,6 +101,10 @@ public class ClientController {
         public String getMobileNumber() { return mobileNumber; }
         public String getEmailAddress() { return emailAddress; }
         public String getAddress() { return address; }
+        public String getPincode() { return pincode; }
+        public String getCity() { return city; }
+        public String getState() { return state; }
+        public String getCountry() { return country; }
         public Integer getEmployeeCount() { return employeeCount; }
         public String getRegisteredDate() { return registeredDate; }
         public String getWorkingHours() { return workingHours; }
@@ -242,9 +254,16 @@ public class ClientController {
     }
 
     @DeleteMapping("/{id:\\d+}")
-    public ResponseEntity<Void> deleteClient(@PathVariable Long id) {
-        clientService.delete(id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> deleteClient(@PathVariable Long id) {
+        try {
+            clientService.delete(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("message", "Failed to delete client database."));
+        }
     }
 
     @PostMapping("/branch")

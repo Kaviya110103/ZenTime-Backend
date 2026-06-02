@@ -63,6 +63,28 @@ public class TenantDatabaseProvisioningService {
         }
     }
 
+    public void dropTenantDatabase(String tenantDatabaseName) {
+        if (tenantDatabaseName == null || tenantDatabaseName.isBlank()) {
+            return;
+        }
+
+        String sourceDatabase = extractDatabaseName(datasourceUrl);
+        if (!tenantDatabaseName.startsWith(tenantDatabasePrefix)
+                || tenantDatabaseName.equalsIgnoreCase(sourceDatabase)
+                || !tenantDatabaseName.matches("[a-zA-Z0-9_]+")) {
+            throw new IllegalArgumentException("Refusing to drop invalid tenant database name.");
+        }
+
+        String serverJdbcUrl = buildServerJdbcUrl(datasourceUrl);
+        String sql = "DROP DATABASE IF EXISTS `" + tenantDatabaseName + "`";
+        try (Connection connection = DriverManager.getConnection(serverJdbcUrl, datasourceUsername, datasourcePassword);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to drop tenant database '" + tenantDatabaseName + "'", e);
+        }
+    }
+
     public boolean hasRequiredTables(String tenantDatabaseName, Set<String> requiredTables) {
         if (requiredTables == null || requiredTables.isEmpty()) {
             return true;

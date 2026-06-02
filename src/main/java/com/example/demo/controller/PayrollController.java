@@ -81,7 +81,6 @@ public class PayrollController {
 
         int daysInMonth = result.daysInMonth();
         int holidayTotalDays = result.holidayDaysFull() + result.holidayDaysHalf();
-        int scheduledDaysExcludingHolidays = Math.max(0, result.scheduledDays() - holidayTotalDays);
         int weekOffDays = Math.max(0, daysInMonth - result.scheduledDays());
         int approvedLeaveTakenCount = Math.max(
                 0,
@@ -113,6 +112,7 @@ public class PayrollController {
         response.put("weekOffDay", employee.getWeekOff());
         response.put("shiftStartTime", employee.getShiftStartTime());
         response.put("shiftEndTime", employee.getShiftEndTime());
+        response.put("regularShiftMinutes", resolveShiftMinutes(employee.getShiftStartTime(), employee.getShiftEndTime()));
         response.put("shiftStart", employee.getShiftStart());
         response.put("shiftEnd", employee.getShiftEnd());
         response.put("additionalWorkingDays", buildAdditionalWorkingDaysResponse(employee));
@@ -120,7 +120,7 @@ public class PayrollController {
         response.put("year", year);
         response.put("salary", salary);
         response.put("daysInMonth", daysInMonth);
-        response.put("scheduledDays", scheduledDaysExcludingHolidays);
+        response.put("scheduledDays", result.scheduledWorkingDays());
         response.put("weekOffDays", weekOffDays);
         response.put("workedDays", result.workedDays());
         response.put("absentDays", absentDays);
@@ -143,18 +143,38 @@ public class PayrollController {
         response.put("expectedHours", result.expectedHours());
         response.put("payableHours", result.payableHours());
         response.put("workedHours", result.workedHours());
+        response.put("expectedWorkingMinutes", result.expectedWorkingMinutes());
+        response.put("presentWorkingMinutes", result.presentWorkingMinutes());
+        response.put("payablePresentMinutes", result.payablePresentMinutes());
+        response.put("payablePresentDays", result.payablePresentDays());
+        response.put("absentPayableDays", result.absentPayableDays());
+        response.put("perDaySalary", result.perDaySalary());
         response.put("perMinuteSalary", result.perMinuteSalary());
         response.put("perHourSalary", result.perHourSalary());
         response.put("absentMinutes", result.absentMinutes());
         response.put("missingHours", result.missingHours());
         response.put("netSalary", result.netSalary());
         response.put("overtimeHours", result.overtimeHours());
+        response.put("overtimeMinutes", Math.max(0, (int) Math.round(result.overtimeHours() * 60.0)));
         if (debug) {
             response.put("debugDays",
                     payrollCalculationService.calculateMonthlyPayrollDebug(employeeId, month, year, clientId));
         }
 
         return ResponseEntity.ok(response);
+    }
+
+    private int resolveShiftMinutes(String startRaw, String endRaw) {
+        if (startRaw == null || endRaw == null || startRaw.isBlank() || endRaw.isBlank()) {
+            return 0;
+        }
+        try {
+            java.time.LocalTime start = java.time.LocalTime.parse(startRaw.trim());
+            java.time.LocalTime end = java.time.LocalTime.parse(endRaw.trim());
+            return Math.max(0, (int) java.time.Duration.between(start, end).toMinutes());
+        } catch (java.time.format.DateTimeParseException ex) {
+            return 0;
+        }
     }
 
     @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

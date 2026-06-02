@@ -7,7 +7,6 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.MODELS.Employee;
@@ -26,7 +25,7 @@ public class HolidayService {
     private EmployeeRepository employeeRepository;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private SchemaMaintenanceService schemaMaintenanceService;
 
     public List<Holiday> getByClientId(Long clientId) {
         ensureHolidayTableExists();
@@ -146,16 +145,6 @@ public class HolidayService {
     }
 
     private void ensureHolidayTableExists() {
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS holidays (
-                    id BIGINT NOT NULL AUTO_INCREMENT,
-                    client_id BIGINT NOT NULL,
-                    holiday_date DATE NOT NULL,
-                    holiday_name VARCHAR(255) NOT NULL,
-                    holiday_type VARCHAR(16) NOT NULL,
-                    PRIMARY KEY (id),
-                    UNIQUE KEY uk_holidays_client_date (client_id, holiday_date)
-                )
-                """);
+        schemaMaintenanceService.ensureEmployeeSchema();
     }
 }
