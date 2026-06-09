@@ -174,7 +174,11 @@ public class SchemaMaintenanceService {
         if (tableExists("attendance_support_request")) {
             ensureColumn("attendance_support_request", "employee_id", "BIGINT NULL");
             ensureColumn("attendance_support_request", "attendance_date", "DATE NULL");
+            ensureColumn("attendance_support_request", "time_in", "TIME NULL");
+            ensureColumn("attendance_support_request", "time_out", "TIME NULL");
             ensureColumn("attendance_support_request", "reason", "VARCHAR(500) NULL");
+            ensureColumn("attendance_support_request", "message", "VARCHAR(1000) NULL");
+            ensureColumn("attendance_support_request", "request_type", "VARCHAR(32) NOT NULL DEFAULT 'Attendance Support'");
             ensureColumn("attendance_support_request", "status", "VARCHAR(16) NOT NULL DEFAULT 'PENDING'");
             ensureColumn("attendance_support_request", "approved_by", "VARCHAR(255) NULL");
             ensureColumn("attendance_support_request", "approved_at", "DATETIME NULL");
@@ -187,8 +191,12 @@ public class SchemaMaintenanceService {
                 CREATE TABLE IF NOT EXISTS attendance_support_request (
                     id BIGINT NOT NULL AUTO_INCREMENT,
                     employee_id BIGINT NOT NULL,
-                    attendance_date DATE NOT NULL,
-                    reason VARCHAR(500) NOT NULL,
+                    attendance_date DATE NULL,
+                    time_in TIME NULL,
+                    time_out TIME NULL,
+                    reason VARCHAR(500) NULL,
+                    message VARCHAR(1000) NULL,
+                    request_type VARCHAR(32) NOT NULL DEFAULT 'Attendance Support',
                     status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
                     approved_by VARCHAR(255) NULL,
                     approved_at DATETIME NULL,

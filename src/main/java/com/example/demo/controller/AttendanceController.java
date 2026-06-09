@@ -393,6 +393,7 @@ public ResponseEntity<String> markTimeIn(
             @PathVariable int year,
             @PathVariable int month) {
         schemaMaintenanceService.ensureEmployeeSchema();
+        reconcileApprovedSwapWeekoffs(employeeId, year, month);
 
         String start = DateUtil.dbStartOfMonth(year, month); // 01/07/2025
         String end   = DateUtil.dbEndOfMonth(year, month);   // 31/07/2025
@@ -1152,6 +1153,7 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     }
     Employee employee = employeeOpt.get();
     Long resolvedEmployeeId = employee.getId();
+    reconcileApprovedSwapWeekoffs(resolvedEmployeeId, year, month);
 
     AttendanceMetricsService.MonthlyMetrics metrics =
             attendanceMetricsService.calculateMonthlyMetrics(resolvedEmployeeId, month, year);
@@ -1187,6 +1189,94 @@ public ResponseEntity<?> getEmployeeMonthlySummary(
     response.put("daysInMonth", daysInMonth);
 
     return ResponseEntity.ok(response);
+}
+
+private void reconcileApprovedSwapWeekoffs(Long employeeId, int year, int month) {
+    if (employeeId == null) {
+        return;
+    }
+
+    Optional<Employee> employeeOpt = employeeRepository.findById(employeeId);
+    if (employeeOpt.isEmpty()) {
+        return;
+    }
+
+    Employee employee = employeeOpt.get();
+    List<LeavePermission> approvedLeaves =
+            leavePermissionRepository.findByEmployeeIdAndStatus(employeeId, "approved");
+    for (LeavePermission leave : approvedLeaves) {
+        if (!isSwapWeekoffType(leave.getLeaveType())) {
+            continue;
+        }
+
+        LocalDate start = parseDbDate(firstNonBlank(leave.getStartDate(), leave.getDate()));
+        LocalDate end = parseDbDate(firstNonBlank(leave.getEndDate(), leave.getStartDate(), leave.getDate()));
+        if (start == null) {
+            continue;
+        }
+        if (end == null) {
+            end = start;
+        }
+
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            if (date.getYear() == year && date.getMonthValue() == month) {
+                upsertSwapWeekoffAttendance(employee, date);
+            }
+        }
+    }
+}
+
+private void upsertSwapWeekoffAttendance(Employee employee, LocalDate date) {
+    String formattedDate = date.format(dateFormatter);
+    List<AttendanceRecord> existingRecords =
+            attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), formattedDate);
+    AttendanceRecord record = existingRecords.isEmpty() ? new AttendanceRecord() : existingRecords.get(0);
+
+    record.setEmployee(employee);
+    record.setDate(formattedDate);
+    record.setAttendanceStatus("Week Off");
+    record.setDayStatus("Week Off");
+    record.setLocation("Swap Weekoff Approved");
+    record.setAttendancelocation("Swap Weekoff Approved");
+    record.setMissedTimes(0);
+    record.setWorkedHours(0.0);
+    record.setOvertime(0.0);
+    record.setPermissionUsed(0.0);
+    attendanceRecordRepository.save(record);
+
+    for (int i = 1; i < existingRecords.size(); i++) {
+        AttendanceRecord duplicate = existingRecords.get(i);
+        if (duplicate.getTimeIn() == null && duplicate.getTimeOut() == null) {
+            attendanceRecordRepository.delete(duplicate);
+        }
+    }
+}
+
+private boolean isSwapWeekoffType(String leaveTypeRaw) {
+    return leaveTypeRaw != null && leaveTypeRaw.trim().equalsIgnoreCase("Swap Weekoff");
+}
+
+private LocalDate parseDbDate(String rawDate) {
+    if (rawDate == null || rawDate.isBlank()) {
+        return null;
+    }
+    try {
+        return LocalDate.parse(rawDate.trim(), dateFormatter);
+    } catch (DateTimeParseException ex) {
+        return null;
+    }
+}
+
+private String firstNonBlank(String... values) {
+    if (values == null) {
+        return null;
+    }
+    for (String value : values) {
+        if (value != null && !value.isBlank()) {
+            return value;
+        }
+    }
+    return null;
 }
 
 private Optional<Employee> resolveEmployeeByRef(String employeeRef, Long clientId) {

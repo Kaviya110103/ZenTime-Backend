@@ -166,14 +166,7 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
 
         if ("approved".equals(newStatus)) {
             if (isSwapWeekoff) {
-                for (AttendanceRecord record : existingRecords) {
-                    boolean removableDayStatus =
-                            "Auto Absent - No Time In".equals(record.getDayStatus())
-                                    || "Leave Approved - Absent".equals(record.getDayStatus());
-                    if (removableDayStatus && record.getTimeIn() == null && record.getTimeOut() == null) {
-                        attendanceRecordRepository.delete(record);
-                    }
-                }
+                markSwapWeekoffAttendance(leave, formattedDate, existingRecords);
             } else if (existingRecords.isEmpty()) {
                 AttendanceRecord attendance = new AttendanceRecord();
                 attendance.setEmployee(leave.getEmployee());
@@ -183,9 +176,10 @@ public ResponseEntity<String> updateLeaveStatus(@PathVariable Long leaveId,
                 attendanceRecordRepository.save(attendance);
             }
         } else {
-            // If status changed from approved to rejected or other, delete "Leave Approved - Absent" records
+            // If status changed from approved to rejected or other, delete records created only by this approval.
             for (AttendanceRecord record : existingRecords) {
-                if ("Leave Approved - Absent".equals(record.getDayStatus())) {
+                if ("Leave Approved - Absent".equals(record.getDayStatus())
+                        || isSwapWeekoffAttendanceRecord(record)) {
                     attendanceRecordRepository.delete(record);
                 }
             }
@@ -285,6 +279,41 @@ public ResponseEntity<Long> countLeavesByStatus(
             return false;
         }
         return leaveTypeRaw.trim().toLowerCase(Locale.ROOT).equals("swap weekoff");
+    }
+
+    private void markSwapWeekoffAttendance(
+            LeavePermission leave,
+            String formattedDate,
+            List<AttendanceRecord> existingRecords) {
+        AttendanceRecord record = existingRecords.isEmpty()
+                ? new AttendanceRecord()
+                : existingRecords.get(0);
+
+        record.setEmployee(leave.getEmployee());
+        record.setDate(formattedDate);
+        record.setAttendanceStatus("Week Off");
+        record.setDayStatus("Week Off");
+        record.setLocation("Swap Weekoff Approved");
+        record.setAttendancelocation("Swap Weekoff Approved");
+        record.setMissedTimes(0);
+        record.setWorkedHours(0.0);
+        record.setOvertime(0.0);
+        record.setPermissionUsed(0.0);
+        attendanceRecordRepository.save(record);
+
+        for (int i = 1; i < existingRecords.size(); i++) {
+            AttendanceRecord duplicate = existingRecords.get(i);
+            if (duplicate.getTimeIn() == null && duplicate.getTimeOut() == null) {
+                attendanceRecordRepository.delete(duplicate);
+            }
+        }
+    }
+
+    private boolean isSwapWeekoffAttendanceRecord(AttendanceRecord record) {
+        return record != null
+                && "Swap Weekoff Approved".equalsIgnoreCase(record.getLocation())
+                && "Week Off".equalsIgnoreCase(record.getAttendanceStatus())
+                && "Week Off".equalsIgnoreCase(record.getDayStatus());
     }
 }
 

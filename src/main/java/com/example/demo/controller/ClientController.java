@@ -172,7 +172,7 @@ public class ClientController {
             return ResponseEntity.badRequest().build();
         }
 
-        Optional<Client> clientOpt = clientService.findByUsernameIgnoreCase(username);
+        Optional<Client> clientOpt = clientService.findLoginClient(username);
         if (clientOpt.isEmpty()) {
             return ResponseEntity.status(401).build();
         }

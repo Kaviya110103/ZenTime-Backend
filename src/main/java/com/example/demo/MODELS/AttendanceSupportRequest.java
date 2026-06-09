@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Entity
 public class AttendanceSupportRequest {
@@ -15,11 +16,23 @@ public class AttendanceSupportRequest {
     @JoinColumn(name = "employee_id", nullable = false)
     private Employee employee;
 
-    @Column(name = "attendance_date", nullable = false)
+    @Column(name = "attendance_date")
     private LocalDate attendanceDate;
 
-    @Column(nullable = false, length = 500)
+    @Column(name = "time_in")
+    private LocalTime timeIn;
+
+    @Column(name = "time_out")
+    private LocalTime timeOut;
+
+    @Column(length = 500)
     private String reason;
+
+    @Column(length = 1000)
+    private String message;
+
+    @Column(name = "request_type", nullable = false, length = 32)
+    private String requestType = "Attendance Support";
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -72,12 +85,44 @@ public class AttendanceSupportRequest {
         this.attendanceDate = attendanceDate;
     }
 
+    public LocalTime getTimeIn() {
+        return timeIn;
+    }
+
+    public void setTimeIn(LocalTime timeIn) {
+        this.timeIn = timeIn;
+    }
+
+    public LocalTime getTimeOut() {
+        return timeOut;
+    }
+
+    public void setTimeOut(LocalTime timeOut) {
+        this.timeOut = timeOut;
+    }
+
     public String getReason() {
         return reason;
     }
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getRequestType() {
+        return requestType;
+    }
+
+    public void setRequestType(String requestType) {
+        this.requestType = requestType;
     }
 
     public AttendanceSupportStatus getStatus() {

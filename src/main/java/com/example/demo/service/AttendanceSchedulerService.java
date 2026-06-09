@@ -135,7 +135,7 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
     }
 
     if (isApprovedSwapWeekoffOnDate(employee, targetDate)) {
-        return 0;
+        return markApprovedSwapWeekoff(employee, targetDate);
     }
 
     ZonedDateTime now = nowInBusinessZone();
@@ -184,6 +184,40 @@ private int ensureAbsentForEmployeeOnDate(Employee employee, LocalDate targetDat
     absentRecord.setDayStatus("Auto Absent - No Time In");
     attendanceRecordRepository.save(absentRecord);
     return 1;
+}
+
+private int markApprovedSwapWeekoff(Employee employee, LocalDate targetDate) {
+    String targetDateText = targetDate.format(formatter);
+    List<AttendanceRecord> attendanceRecords =
+            attendanceRecordRepository.findByEmployeeIdAndDate(employee.getId(), targetDateText);
+    AttendanceRecord record = attendanceRecords.isEmpty()
+            ? new AttendanceRecord()
+            : attendanceRecords.get(0);
+
+    boolean changed =
+            !"Week Off".equalsIgnoreCase(record.getAttendanceStatus())
+                    || !"Week Off".equalsIgnoreCase(record.getDayStatus());
+
+    record.setEmployee(employee);
+    record.setDate(targetDateText);
+    record.setAttendanceStatus("Week Off");
+    record.setDayStatus("Week Off");
+    record.setLocation("Swap Weekoff Approved");
+    record.setAttendancelocation("Swap Weekoff Approved");
+    record.setMissedTimes(0);
+    record.setWorkedHours(0.0);
+    record.setOvertime(0.0);
+    record.setPermissionUsed(0.0);
+    attendanceRecordRepository.save(record);
+
+    for (int i = 1; i < attendanceRecords.size(); i++) {
+        AttendanceRecord duplicate = attendanceRecords.get(i);
+        if (duplicate.getTimeIn() == null && duplicate.getTimeOut() == null) {
+            attendanceRecordRepository.delete(duplicate);
+        }
+    }
+
+    return changed ? 1 : 0;
 }
 
 private boolean isApprovedSwapWeekoffOnDate(Employee employee, LocalDate targetDate) {

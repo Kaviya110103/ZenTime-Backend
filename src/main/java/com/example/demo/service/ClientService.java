@@ -67,6 +67,16 @@ public class ClientService {
         return repo.findByUsernameIgnoreCase(username);
     }
 
+    public Optional<Client> findLoginClient(String login) {
+        if (login == null || login.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = login.trim();
+        return repo.findByUsernameIgnoreCase(normalized)
+                .or(() -> repo.findByCompanyCodeIgnoreCase(normalized))
+                .or(() -> repo.findByEmailAddressIgnoreCase(normalized));
+    }
+
     public Client save(Client client) {
         return repo.save(client);
     }
