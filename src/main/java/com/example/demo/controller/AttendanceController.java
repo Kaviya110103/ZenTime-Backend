@@ -193,6 +193,7 @@ public List<Map<String, Object>> getMissedTimeoutEmployees(
         Map<String, Object> map = new HashMap<>();
         map.put("attendanceId", record.getId());
         map.put("firstName", record.getEmployee().getFirstName());
+        map.put("lastName", record.getEmployee().getLastName());
         map.put("mobile", record.getEmployee().getMobile());
         map.put("branch", record.getEmployee().getBranch());
         map.put("position", record.getEmployee().getPosition());
@@ -238,6 +239,7 @@ public List<Map<String, Object>> getCompletedMissedTimeoutEmployees(
         Map<String, Object> map = new HashMap<>();
         map.put("attendanceId", record.getId());
         map.put("firstName", record.getEmployee().getFirstName());
+        map.put("lastName", record.getEmployee().getLastName());
         map.put("mobile", record.getEmployee().getMobile());
         map.put("branch", record.getEmployee().getBranch());
         map.put("position", record.getEmployee().getPosition());

@@ -248,9 +248,7 @@ public class AttendanceSupportRequestController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", request.getId());
         response.put("employeeId", employee == null ? null : employee.getId());
-        response.put("employeeName", employee == null
-                ? ""
-                : String.format("%s %s", safe(employee.getFirstName()), safe(employee.getLastName())).trim());
+        response.put("employeeName", formatEmployeeName(employee));
         response.put("branch", employee == null ? "" : safe(employee.getBranch()));
         response.put("requestType", normalizeRequestType(request.getRequestType()) == null ? TYPE_ATTENDANCE : normalizeRequestType(request.getRequestType()));
         response.put("attendanceDate", request.getAttendanceDate());
@@ -280,6 +278,17 @@ public class AttendanceSupportRequestController {
 
     private String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private String formatEmployeeName(Employee employee) {
+        if (employee == null) {
+            return "";
+        }
+        String fullName = String.format("%s %s", safe(employee.getFirstName()), safe(employee.getLastName())).trim();
+        if (!fullName.isBlank()) {
+            return fullName;
+        }
+        return safe(employee.getUsername()).trim();
     }
 
     private String normalizeRequestType(String raw) {
